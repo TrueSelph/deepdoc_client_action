@@ -42,7 +42,7 @@ walker add_documents :interact_graph_walker: {
         processed_files = [
             file['content'] for file in self.files if 'content' in file
         ] if self.files else [];
-        
+
 
         self.response = here.queue_deepdoc_job(
             urls=self.urls,

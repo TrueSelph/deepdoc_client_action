@@ -1,16 +1,9 @@
 """This module contains the Streamlit app for the Typesense Vector Store Action"""
 
-import json
-from io import BytesIO
-
-from jvclient.client.lib.utils import call_action_walker_exec, jac_yaml_dumper
-from jvclient.client.lib.widgets import app_controls, app_header, app_update_action
-
 import streamlit as st
-
+from jvclient.client.lib.utils import call_action_walker_exec
+from jvclient.client.lib.widgets import app_header, app_update_action
 from streamlit_router import StreamlitRouter
-
-import yaml
 
 
 def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -> None:
@@ -30,7 +23,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             "Upload PDF files",
             type=["pdf", "docx", "doc", "txt"],
             accept_multiple_files=True,
-            key=f"{model_key}_pdf_upload"
+            key=f"{model_key}_pdf_upload",
         )
 
         # URL input section
@@ -38,11 +31,11 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             "Enter PDF URLs (one per line)",
             height=100,
             help="Enter URLs to PDF files, one URL per line",
-            key=f"{model_key}_pdf_urls"
+            key=f"{model_key}_pdf_urls",
         )
 
         # Process URLs into a list
-        url_list = [url.strip() for url in pdf_urls.split('\n') if url.strip()]
+        url_list = [url.strip() for url in pdf_urls.split("\n") if url.strip()]
 
         # Validation message
         if not uploaded_pdfs and not url_list:
@@ -52,28 +45,30 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             # Prepare the payload
             payload = {
                 "files": uploaded_pdfs if uploaded_pdfs else [],
-                "urls": url_list if url_list else []
+                "urls": url_list if url_list else [],
             }
             print("Payload:", payload)
 
             # Call the parse_pdfs walker
             result = call_action_walker_exec(
-                agent_id,
-                module_root,
-                "parse_pdfs",
-                payload
+                agent_id, module_root, "parse_pdfs", payload
             )
-            
+
             if result:
                 st.success("PDFs parsed successfully!")
                 # Display number of processed files
                 total_processed = len(uploaded_pdfs) + len(url_list)
-                st.info(f"Processed {total_processed} {'file' if total_processed == 1 else 'files'}")
+                st.info(
+                    f"Processed {total_processed} {'file' if total_processed == 1 else 'files'}"
+                )
             else:
-                st.error("Failed to parse PDFs. Please check your inputs and try again.")
+                st.error(
+                    "Failed to parse PDFs. Please check your inputs and try again."
+                )
 
     # Add update button to apply changes
     app_update_action(agent_id, action_id)
+
 
 # Additional function definitions remain unchanged
 

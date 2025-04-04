@@ -10,24 +10,24 @@ node DeepDocClientAction :Action: {
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
-    
+
     # api url to deepdoc service
-    has deepdoc_api_url:str = ""; 
+    has deepdoc_api_url:str = "";
     has vector_store_action:str = "TypesenseVectorStoreAction";
     has doc_manifest:str = [];
 
     can queue_deepdoc_job(
-        urls:list[str]=[], 
-        files:list[bytes]=[], 
-        from_page:int=0, 
-        to_page:int=100000, 
-        lang:str="english", 
+        urls:list[str]=[],
+        files:list[bytes]=[],
+        from_page:int=0,
+        to_page:int=100000,
+        lang:str="english",
         callback_url:str=""
     ) -> str {
-            
+
         # """
         # Sends a request to the DeepDoc service to queue documents for processing.
-        
+
         # Args:
         #     urls (list[str]): List of document URLs to process.
         #     files (list[bytes]): List of file contents to process.
@@ -35,19 +35,19 @@ node DeepDocClientAction :Action: {
         #     to_page (int): Ending page number for processing.
         #     lang (str): Language of the documents.
         #     callback_url (str): Optional callback URL for job completion notification.
-        
+
         # Returns:
         #     str: The job ID returned by the DeepDoc service.
         # """
         try {
-            
+
             # Prepare the payload for the request
             payload = {
                 "from_page": from_page,
                 "to_page": to_page,
                 "lang": lang
             };
-            
+
             # Include the callback URL if provided
             if callback_url {
                 payload["callback_url"] = callback_url;
@@ -90,26 +90,26 @@ node DeepDocClientAction :Action: {
     can get_deepdoc_job(job_id:str) -> dict {
         # """
         # Retrieves the status of a queued job from the DeepDoc service.
-        
+
         # Args:
         #     job_id (str): The ID of the job to check.
-        
+
         # Returns:
         #     dict: The status and result of the job.
         # """
         try {
             # Make the GET request to the DeepDoc service
             response = requests.get(f"{self.deepdoc_api_url}/job/{job_id}");
-            
+
             # Check if the response is successful
             if response.status_code != 200 {
                 self.logger.error(f"Failed to get job status: {response.text}");
                 return {"status": "error", "error": response.text};
             }
-            
+
             # Parse the response JSON
             response_data = response.json();
-            
+
             # Ensure the response contains the expected fields
             if "status" in response_data {
                 return response_data;
@@ -127,23 +127,23 @@ node DeepDocClientAction :Action: {
     can cancel_deepdoc_job(job_id:str) -> bool {
         # """
         # Cancels a queued job in the DeepDoc service.
-        
+
         # Args:
         #     job_id (str): The ID of the job to cancel.
-        
+
         # Returns:
         #     bool: True if the cancellation was successful, False otherwise.
         # """
         try {
             # Make the DELETE request to cancel the job
             response = requests.delete(f"{self.deepdoc_api_url}/job/{job_id}");
-            
+
             # Check if the response is successful
             if response.status_code != 200 {
                 self.logger.error(f"Failed to cancel job: {response.text}");
                 return False;
             }
-            
+
             return True;
         } catch Exception as e {
             self.logger.error(f"Exception occurred while cancelling job: {str(e)}");
@@ -155,10 +155,10 @@ node DeepDocClientAction :Action: {
     can ingest_deepdoc_job(job_data:dict) -> bool {
         # """
         # Imports the results of a completed job into the vector store using add_texts.
-        
+
         # Args:
         #     job_data (dict): The data returned from the DeepDoc service for the completed job.
-        
+
         # Returns:
         #     bool: True if the import was successful, False otherwise.
         # """
@@ -215,11 +215,11 @@ node DeepDocClientAction :Action: {
 
     can get_callback_url(walker_name:str) -> str {
         # setup procedure for webhook registration on deepdoc
-        
+
         base_url = os.environ.get('JIVAS_BASE_URL');
         callback_url = "";
 
-        agent_id = self.get_agent().id; 
+        agent_id = self.get_agent().id;
         module_root = self.get_module_root();
         # generate webhook key
         webhook_key = AgentInterface.encrypt_webhook_key(agent_id=agent_id, module_root=module_root, walker=walker_name);
@@ -227,7 +227,7 @@ node DeepDocClientAction :Action: {
         if(base_url and webhook_key) {
             # complete the full webhook url
             callback_url = f'{base_url}/webhook/{webhook_key}';
-            self.logger.debug(f'webhook url: {self.webhook_url}');         
+            self.logger.debug(f'webhook url: {self.webhook_url}');
         } else {
             self.logger.error('unable to generate webhook url for DeepDoc Client, missing required parameters');
             return "";

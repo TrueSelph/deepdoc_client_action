@@ -33,7 +33,7 @@ walker deepdoc_callback :interact_graph_walker: {
             # now ingest the job data into the vector store
             self.response = here.ingest_deepdoc_job(job_data=job_data);
         }
-        
+
     }
 
 }
