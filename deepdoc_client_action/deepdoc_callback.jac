@@ -27,7 +27,7 @@ walker deepdoc_callback :interact_graph_walker: {
 
     can on_action with Action entry {
         # processes deepdoc job data and ingests into vector_store
-        if(self.job_id == "completed") {
+        if(self.status == "completed") {
             # first get the deepdoc job data
             job_data = here.get_deepdoc_job(job_id=self.job_id);
             # now ingest the job data into the vector store
