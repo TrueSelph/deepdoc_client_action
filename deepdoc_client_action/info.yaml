@@ -7,7 +7,7 @@ package:
     title: DeepDoc Client Action
     description: Integrates with DeepDoc OCR and document parsing services to ingest documents into a vector store
     group: core
-    type: vector_store_action
+    type: action
   config:
     singleton: true
   dependencies:

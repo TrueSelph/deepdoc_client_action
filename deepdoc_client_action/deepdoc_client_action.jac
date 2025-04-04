@@ -1,8 +1,9 @@
 import:py os;
+import:py requests;
 import:py logging;
 import:py traceback;
 import:py from logging { Logger }
-import:jac from agent.action.action { Action }
+import:jac from jivas.agent.action.action { Action }
 import:py from jvserve.lib.agent_interface { AgentInterface }
 
 node DeepDocClientAction :Action: {
@@ -12,9 +13,11 @@ node DeepDocClientAction :Action: {
     static has logger:Logger = logging.getLogger(__name__);
 
     # api url to deepdoc service
-    has deepdoc_api_url:str = "";
+    has api_url:str = os.environ.get('DEEPDOC_API_URL', 'https://127.0.0.1:8001');
+    has api_key:str = os.environ.get('DEEPDOC_API_KEY','api-key');
+    has base_url:str = os.environ.get('JIVAS_BASE_URL', 'http://localhost:8000');
     has vector_store_action:str = "TypesenseVectorStoreAction";
-    has doc_manifest:str = [];
+    has doc_manifest:list = [];
 
     can queue_deepdoc_job(
         urls:list[str]=[],
@@ -53,17 +56,22 @@ node DeepDocClientAction :Action: {
                 payload["callback_url"] = callback_url;
             }
 
-            # Prepare the files and URLs for the request
-            files_data = [("files", (f"file_{i}", file, "application/octet-stream")) for (i, file) in enumerate(files)];
-            data = [("urls", url) for url in urls];
+            if urls {
+                # Add URLs to the payload if provided
+                payload["urls"] = urls;
+            }
 
-            # Combine payload, files, and URLs
-            multipart_data = data + list(payload.items()) + files_data;
+            # Prepare the files for the request
+            files_data = [];
+            for (i, file_tuple) in enumerate(files) {
+                files_data.append(("files", file_tuple));
+            }
 
             # Make the POST request to the DeepDoc service
             response = requests.post(
-                f"{self.deepdoc_api_url}/upload_and_chunk",
-                files=multipart_data
+                f"{self.api_url}/upload_and_chunk",
+                files=files_data,
+                data=payload
             );
 
             # Check if the response is successful
@@ -80,7 +88,7 @@ node DeepDocClientAction :Action: {
                 self.logger.error("Response does not contain job_id.");
                 return "";
             }
-        } catch Exception as e {
+        } except Exception as e {
             self.logger.error(f"Exception occurred while queuing documents: {str(e)}");
             self.logger.error(traceback.format_exc());
             return "";
@@ -99,7 +107,7 @@ node DeepDocClientAction :Action: {
         # """
         try {
             # Make the GET request to the DeepDoc service
-            response = requests.get(f"{self.deepdoc_api_url}/job/{job_id}");
+            response = requests.get(f"{self.api_url}/job/{job_id}");
 
             # Check if the response is successful
             if response.status_code != 200 {
@@ -117,7 +125,7 @@ node DeepDocClientAction :Action: {
                 self.logger.error("Response does not contain 'status' field.");
                 return {"status": "error", "error": "Invalid response format"};
             }
-        } catch Exception as e {
+        } except Exception as e {
             self.logger.error(f"Exception occurred while getting job status: {str(e)}");
             self.logger.error(traceback.format_exc());
             return {"status": "error", "error": str(e)};
@@ -136,7 +144,7 @@ node DeepDocClientAction :Action: {
         # """
         try {
             # Make the DELETE request to cancel the job
-            response = requests.delete(f"{self.deepdoc_api_url}/job/{job_id}");
+            response = requests.delete(f"{self.api_url}/job/{job_id}");
 
             # Check if the response is successful
             if response.status_code != 200 {
@@ -145,7 +153,7 @@ node DeepDocClientAction :Action: {
             }
 
             return True;
-        } catch Exception as e {
+        } except Exception as e {
             self.logger.error(f"Exception occurred while cancelling job: {str(e)}");
             self.logger.error(traceback.format_exc());
             return False;
@@ -206,7 +214,7 @@ node DeepDocClientAction :Action: {
             vector_store_action.add_texts(texts=texts, metadatas=metadatas);
 
             return True;
-        } catch Exception as e {
+        } except Exception as e {
             self.logger.error(f"Exception occurred while importing job data: {str(e)}");
             self.logger.error(traceback.format_exc());
             return False;
@@ -216,7 +224,7 @@ node DeepDocClientAction :Action: {
     can get_callback_url(walker_name:str) -> str {
         # setup procedure for webhook registration on deepdoc
 
-        base_url = os.environ.get('JIVAS_BASE_URL');
+        base_url = self.base_url;
         callback_url = "";
 
         agent_id = self.get_agent().id;
@@ -227,7 +235,6 @@ node DeepDocClientAction :Action: {
         if(base_url and webhook_key) {
             # complete the full webhook url
             callback_url = f'{base_url}/webhook/{webhook_key}';
-            self.logger.debug(f'webhook url: {self.webhook_url}');
         } else {
             self.logger.error('unable to generate webhook url for DeepDoc Client, missing required parameters');
             return "";
