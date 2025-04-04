@@ -23,4 +23,4 @@ Performs import of specific deepdoc chunks and metadata on a vector store
 
 - **Jivas:** ^2.0.0
 
-This package is design to implement a custom import operation for DeepDoc against the typesense store for retrieval augmented generation tasks. It is a custom action type and is configured to be a singleton, ensuring only one instance of this action is active at any time.
+This package is design to implement a custom import operation for DeepDoc against the typesense store for retrieval augmented generation tasks. It is a custom action type and is configured to be a singleton, ensuring only one instance of this action is active at any time. 
