@@ -69,7 +69,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 # Display number of processed files
                 total_processed = len(doc_uploads) + len(url_list)
                 st.success(
-                    f" {total_processed} document(s) queued for processing under job ID {result}..."
+                    f" {total_processed} document(s) queued for processing under job ID [ {result} ] "
                 )
             else:
                 st.error(

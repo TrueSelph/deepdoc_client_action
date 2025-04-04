@@ -15,7 +15,7 @@ walker add_documents :interact_graph_walker: {
     has from_page:int = 0;
     has to_page:int = 100000;
     has lang:str = "english";
-    has response:bool = False;
+    has response:str = "";
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
@@ -38,15 +38,9 @@ walker add_documents :interact_graph_walker: {
             disengage;
         }
 
-        # Convert files to a collection of bytestreams if provided
-        processed_files = [
-            file['content'] for file in self.files if 'content' in file
-        ] if self.files else [];
-
-
         self.response = here.queue_deepdoc_job(
             urls=self.urls,
-            files=processed_files,
+            files=self.files,
             from_page=self.from_page,
             to_page=self.to_page,
             lang=self.lang,

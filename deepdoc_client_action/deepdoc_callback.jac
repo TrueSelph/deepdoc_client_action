@@ -46,7 +46,7 @@ walker deepdoc_callback :interact_graph_walker: {
                 self.response = here.ingest_deepdoc_job(job_data=job_data);
             }
         } else {
-            self.logger.error(f"DeepDoc job failed with status: {str(self.params.get("status", ""))} - {str(self.params.get("error", "")});
+            self.logger.error(f"DeepDoc job failed with status: {str(self.params.get("status", ""))} - {str(self.params.get("error", ""))}");
             self.response = False;
         }
 

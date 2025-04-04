@@ -13,15 +13,36 @@ node DeepDocClientAction :Action: {
     static has logger:Logger = logging.getLogger(__name__);
 
     # api url to deepdoc service
-    has api_url:str = os.environ.get('DEEPDOC_API_URL', 'https://127.0.0.1:8001');
+    has api_url:str = os.environ.get('DEEPDOC_API_URL', 'https://deepdoc.trueselph.com');
     has api_key:str = os.environ.get('DEEPDOC_API_KEY','api-key');
-    has base_url:str = os.environ.get('JIVAS_BASE_URL', 'http://localhost:8000');
+    has base_url:str = os.environ.get('JIVAS_BASE_URL', '');
     has vector_store_action:str = "TypesenseVectorStoreAction";
     has doc_manifest:list = [];
 
+    can healthcheck() {
+        # """
+        # Checks the health of the DeepDoc service by sending a GET request to the health endpoint.
+
+        # Returns:
+        #     bool: True if the service is healthy, False otherwise.
+        # """
+        if self.base_url == "" {
+            self.logger.error("Healthcheck for DeepDoc Client failed. Base URL is not set.");
+            return False;
+        }
+        try {
+            response = requests.get(f"{self.api_url}/health");
+            return response.status_code == 200;
+        } except Exception as e {
+            self.logger.error(f"Healthcheck for DeepDoc Client failed. DeepDoc service is not reachable: {str(e)}");
+            self.logger.error(traceback.format_exc());
+            return False;
+        }
+    }
+
     can queue_deepdoc_job(
         urls:list[str]=[],
-        files:list[bytes]=[],
+        files:list[dict]=[],
         from_page:int=0,
         to_page:int=100000,
         lang:str="english",
@@ -63,8 +84,22 @@ node DeepDocClientAction :Action: {
 
             # Prepare the files for the request
             files_data = [];
-            for (i, file_tuple) in enumerate(files) {
-                files_data.append(("files", file_tuple));
+            for file in files {
+                if "name" in file and "type" in file and "content" in file {
+                    files_data.append(
+                        (
+                            "files",
+                            (
+                                file["name"],
+                                file["content"],
+                                file["type"]
+                            )
+                        )
+                    );
+                } else {
+                    self.logger.error(f"Invalid file format: {file}");
+                    return "";
+                }
             }
 
             # Make the POST request to the DeepDoc service
