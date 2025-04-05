@@ -39,11 +39,15 @@ walker deepdoc_callback :interact_graph_walker: {
         # processes deepdoc job data and ingests into vector_store
         if(self.params.get("status", "") == "completed") {
             # first get the deepdoc job data
+            job_id = self.params.get("job_id","");
             job_data = here.get_deepdoc_job(job_id = self.params.get("job_id","") );
 
-            if(job_data) {
+            if(job_id and job_data) {
                 # now ingest the job data into the vector store
-                self.response = here.ingest_deepdoc_job(job_data=job_data);
+                self.response = here.ingest_deepdoc_job(job_id=job_id, job_data=job_data);
+            } else {
+                self.logger.error(f"DeepDoc job data incomplete");
+                self.response = False;
             }
         } else {
             self.logger.error(f"DeepDoc job failed with status: {str(self.params.get("status", ""))} - {str(self.params.get("error", ""))}");

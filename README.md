@@ -122,8 +122,8 @@ After adjusting settings, restart your service or action to apply your changes.
 <summary>Contributor Graph</summary>
 <br>
 <p align="left">
-    <a href="https://github.com/TrueSelph/deepdoc_store_action/graphs/contributors">
-        <img src="https://contrib.rocks/image?repo=TrueSelph/deepdoc_store_action" />
+    <a href="https://github.com/TrueSelph/deepdoc_client_action/graphs/contributors">
+        <img src="https://contrib.rocks/image?repo=TrueSelph/deepdoc_client_action" />
    </a>
 </p>
 </details>

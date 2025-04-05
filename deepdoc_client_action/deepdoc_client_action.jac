@@ -5,6 +5,7 @@ import:py traceback;
 import:py from logging { Logger }
 import:jac from jivas.agent.action.action { Action }
 import:py from jvserve.lib.agent_interface { AgentInterface }
+import:py from jvserve.lib.file_interface { file_interface }
 
 node DeepDocClientAction :Action: {
     # Integrates with DeepDoc OCR and document parsing services to ingest documents into a vector store
@@ -17,7 +18,7 @@ node DeepDocClientAction :Action: {
     has api_key:str = os.environ.get('DEEPDOC_API_KEY','api-key');
     has base_url:str = os.environ.get('JIVAS_BASE_URL', '');
     has vector_store_action:str = "TypesenseVectorStoreAction";
-    has doc_manifest:list = [];
+    has doc_manifest:dict = {};
 
     can healthcheck() {
         # """
@@ -118,6 +119,31 @@ node DeepDocClientAction :Action: {
             # Parse the response JSON
             response_data = response.json();
             if "job_id" in response_data {
+
+                # now we archive the uploaded file(s) as under job_id in the doc_manifest
+                for file in files {
+                    if "name" in file {
+
+                        output_file_name = f"{response_data['job_id']}_{file['name']}";
+                        output_file_path = f"ddc/{output_file_name}";
+                        file_interface.save_file(output_file_path, file["content"]);
+
+                        srv_source = file_interface.get_file_url(f"ddc/{output_file_name}");
+
+                        # Initialize the doc_manifest entry for the job_id if it does not exist
+                        if response_data["job_id"] not in self.doc_manifest.keys() {
+                            self.doc_manifest[response_data["job_id"]] = [];
+                        }
+
+                        # Append the file details to the doc_manifest entry
+                        self.doc_manifest[response_data["job_id"]].append({
+                            "file_path": srv_source or output_file_path,
+                            "file_name": file["name"],
+                            "file_type": file["type"]
+                        });
+                    }
+                }
+
                 return response_data["job_id"];
             } else {
                 self.logger.error("Response does not contain job_id.");
@@ -195,7 +221,7 @@ node DeepDocClientAction :Action: {
         }
     }
 
-    can ingest_deepdoc_job(job_data:dict) -> bool {
+    can ingest_deepdoc_job(job_id:str, job_data:dict) -> bool {
         # """
         # Imports the results of a completed job into the vector store using add_texts.
 
@@ -228,17 +254,40 @@ node DeepDocClientAction :Action: {
 
             # Prepare texts and metadatas and ingest
             for result in results {
+
                 text = result.get("text", "");
                 metadata = result.get("metadata", {});
 
-                # Ensure required metadata fields are retained
+                # Consolidate page numbers into a range string (e.g., "1-2")
                 page_numbers = metadata.get("page_num_int", []);
-                consolidated_page = page_numbers[0] if page_numbers else None;
+                if page_numbers {
+
+                    unique_pages = sorted(set(page_numbers));
+                    if len(unique_pages) > 1 {
+                        consolidated_page = f"{unique_pages[0]}-{unique_pages[-1]}";
+                    } else {
+                        consolidated_page = str(unique_pages[0]);
+                    }
+                } else {
+                    consolidated_page = "1";
+                }
 
                 filtered_metadata = {
+                    "source": metadata.get("docnm_kwd", ""),
                     "page": consolidated_page,
-                    "source": metadata.get("docnm_kwd", "")
+                    "filename": metadata.get("original_filename", ""),
+                    "job_id": job_id
                 };
+
+                # compose the path to file and update source
+                srv_filename = f"ddc/{job_id}_{filtered_metadata['filename']}";
+                srv_source = file_interface.get_file_url(srv_filename);
+                if srv_source {
+                    filtered_metadata["source"] = srv_source;
+                } else {
+                    self.logger.error(f"Unable to get file source url for {filtered_metadata['filename']}, setting source to {filtered_metadata['filename']}");
+                    filtered_metadata["source"] = filtered_metadata["filename"];
+                }
 
                 doc_id = vector_store_action.add_texts(
                     texts=[text],
