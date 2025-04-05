@@ -219,9 +219,14 @@ node DeepDocClientAction :Action: {
                 return False;
             }
 
-            # Prepare texts and metadatas for ingestion
-            texts = [];
-            metadatas = [];
+                        # Get the vector store action and ingest the texts
+            vector_store_action = self.get_agent().get_actions().get(action_label=self.vector_store_action);
+            if not vector_store_action {
+                self.logger.error(f"Vector store action '{self.vector_store_action}' not found.");
+                return False;
+            }
+
+            # Prepare texts and metadatas and ingest
             for result in results {
                 text = result.get("text", "");
                 metadata = result.get("metadata", {});
@@ -235,20 +240,17 @@ node DeepDocClientAction :Action: {
                     "source": metadata.get("docnm_kwd", "")
                 };
 
-                texts.append(text);
-                metadatas.append(filtered_metadata);
-            }
+                doc_id = vector_store_action.add_texts(
+                    texts=[text],
+                    metadatas=[filtered_metadata],
+                    ids=[result.get("id") or f"doc_{os.urandom(8).hex()}"]
+                );
 
-            # Get the vector store action and ingest the texts
-            vector_store_action = self.get_agent().get_actions().get(action_label=self.vector_store_action);
-            if not vector_store_action {
-                self.logger.error(f"Vector store action '{self.vector_store_action}' not found.");
-                return False;
+                self.logger.info(f"{doc_id} added to vector store with metadata: {filtered_metadata}");
             }
-
-            vector_store_action.add_texts(texts=texts, metadatas=metadatas);
 
             return True;
+
         } except Exception as e {
             self.logger.error(f"Exception occurred while importing job data: {str(e)}");
             self.logger.error(traceback.format_exc());
