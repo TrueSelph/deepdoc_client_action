@@ -27,7 +27,7 @@ walker delete_documents :interact_graph_walker: {
 
     can on_action with Action entry {
         # call the remove/delete method on the action
-        
+
         success = True;
 
         # check if the documents list is empty
@@ -46,7 +46,7 @@ walker delete_documents :interact_graph_walker: {
                 success = False;
                 continue;
             }
-            
+
             # remove the document entries from the vector store
             if not here.remove_doc_vector_store_entries(
                 job_id=doc.get("job_id", ""),

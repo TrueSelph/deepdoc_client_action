@@ -23,7 +23,7 @@ walker list_documents :interact_graph_walker: {
         visit [-->](`?Action)(?enabled==True)(?label=='DeepDocClientAction');
     }
 
-    can on_action with Action entry {        
+    can on_action with Action entry {
         # get the list of documents from the manifest
         self.response = here.get_doc_manifest_entries();
     }
