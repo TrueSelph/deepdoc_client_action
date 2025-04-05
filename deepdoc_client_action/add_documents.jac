@@ -31,6 +31,14 @@ walker add_documents :interact_graph_walker: {
     can on_action with Action entry {
         # call the queue_deepdoc_job method on the action
 
+        # check if the urls and files lists are empty
+        if( not self.urls and not self.files ) {
+            Jac.get_context().status = 400;
+            Jac.get_context().error = "No URLs or files provided for processing.";
+            self.response = False;
+            disengage;
+        }
+
         # generate the callback URL to pass to the deepdoc service
         if( not(callback_url := here.get_callback_url("deepdoc_callback")) ) {
             Jac.get_context().status = 500;
@@ -46,9 +54,6 @@ walker add_documents :interact_graph_walker: {
             lang=self.lang,
             callback_url=callback_url
         );
-
-        # set the response status
-        Jac.get_context().status = 200;
     }
 
 }

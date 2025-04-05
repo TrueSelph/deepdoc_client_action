@@ -36,24 +36,34 @@ walker deepdoc_callback :interact_graph_walker: {
     }
 
     can on_action with Action entry {
-        # processes deepdoc job data and ingests into vector_store
-        if(self.params.get("status", "") == "completed") {
-            # first get the deepdoc job data
-            job_id = self.params.get("job_id","");
-            job_data = here.get_deepdoc_job(job_id = self.params.get("job_id","") );
+        # Process deepdoc job data and ingest into vector_store
 
-            if(job_id and job_data) {
-                # now ingest the job data into the vector store
-                self.response = here.ingest_deepdoc_job(job_id=job_id, job_data=job_data);
+        job_id = self.params.get("job_id", "");
+        status = self.params.get("status", "");
+        error_message = self.params.get("error", "");
+
+        if status == "completed" {
+            # Retrieve the deepdoc job data
+            job_data = here.get_deepdoc_job(job_id=job_id);
+
+            if job_id and job_data {
+                try {
+                    # Ingest the job data into the vector store
+                    self.response = here.ingest_deepdoc_job(job_id=job_id, job_data=job_data);
+                } except Exception as e {
+                    self.logger.error(f"Error during ingestion: {str(e)}");
+                    self.response = False;
+                }
             } else {
-                self.logger.error(f"DeepDoc job data incomplete");
+                self.logger.error("DeepDoc job data is incomplete or missing");
+                here.delete_doc_manifest_job(job_id=job_id);
                 self.response = False;
             }
         } else {
-            self.logger.error(f"DeepDoc job failed with status: {str(self.params.get("status", ""))} - {str(self.params.get("error", ""))}");
+            self.logger.error(f"DeepDoc job failed with status: {status} - {error_message}");
+            here.delete_doc_manifest_job(job_id=job_id);
             self.response = False;
         }
-
     }
 
 }
