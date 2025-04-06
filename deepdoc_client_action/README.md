@@ -6,7 +6,20 @@
 ![GitHub pull requests](https://img.shields.io/github/issues-pr/TrueSelph/deepdoc_client_action)
 ![GitHub](https://img.shields.io/github/license/TrueSelph/deepdoc_client_action)
 
-The **DeepDoc Client Action** interfaces with the [DeepDoc](https://github.com/infiniflow/ragflow/blob/main/deepdoc) service for document processing, chunking, and metadata extraction. It allows users to upload documents or document URLs in batches for various formats (PDF, DOCX, Excel, PPT, TXT), facilitating asynchronous document processing and ingestion into a configured vector store.
+The **DeepDoc Client Action** interfaces with the JIVAS [DeepDoc](https://github.com/infiniflow/ragflow/blob/main/deepdoc) service for document processing, chunking, metadata extraction, document handling, serving, and integrated management. Users can upload documents or URLs in batches across multiple formats, including PDF, DOCX, Excel, PPT, and TXT. Processing occurs asynchronously, culminating in ingestion and indexing within your configured vector store.
+
+## Document Handling & Management
+
+The **DeepDoc Client Action** now provides comprehensive document handling and management capabilities through built-in file serving integrated with your configured vector store:
+
+- **File Serving and Integration**:
+  Uploaded documents can be served directly and are linked seamlessly to stored content within the vector store. When deleting a processed document through this interface, all associated references and indexed vector content will also be automatically removed, maintaining data integrity.
+
+- **Document Management Interface**:
+  Users have access to an intuitive management interface to easily view a comprehensive list of all ingested documents. Documents may be quickly added or removed, thereby making repository management straightforward and efficient.
+
+- **Duplicate Prevention Safeguards**:
+  Duplicate processing of documents is automatically prevented. The system verifies and ensures that each uploaded document is unique within the repository and vector store, eliminating redundancy and potential confusion.
 
 This package is defined as a singleton action, requiring the Jivas library (version **2.0.0 or higher**) and a properly configured `vector_store_action`. It also requires the Jivas-modified DeepDoc service.
 
@@ -81,6 +94,44 @@ After adjusting settings, restart your service or action to apply your changes.
 
 ---
 
+### Required Configuration for Local File Serving
+
+If operating locally, you must ensure proper configuration of either local or Amazon S3 file serving to enable this functionality. Configure the following variables in your `.env` file:
+
+```bash
+# Set Environment
+JIVAS_ENVIRONMENT=development
+
+# JIVAS File Serving Config (Local)
+JIVAS_FILE_INTERFACE="local"
+JIVAS_FILES_ROOT_PATH=".files"
+JIVAS_FILES_URL="http://127.0.0.1:9000/files"
+
+# Alternative: Amazon S3 Configuration
+JIVAS_FILE_INTERFACE="s3"
+JIVAS_S3_ENDPOINT="your-s3-endpoint"            # optional, typically for custom endpoints
+JIVAS_S3_ACCESS_KEY_ID="your-access-key-id"
+JIVAS_S3_SECRET_ACCESS_KEY="your-secret-access-key"
+JIVAS_S3_REGION="us-east-1"
+JIVAS_S3_BUCKET_NAME="your-bucket-name"
+```
+
+In addition, running locally requires configuration of MongoDB and a suitable vector store (we strongly recommend Typesense). Include the following configuration in your `.env` file:
+
+```bash
+# MongoDB Config
+DATABASE_HOST="mongodb://localhost:27017/?replicaSet=my-rs"
+
+# Typesense Vector Store Config
+TYPESENSE_HOST="localhost"
+TYPESENSE_PORT=8108
+TYPESENSE_PROTOCOL="http"
+TYPESENSE_API_KEY="abcd"
+TYPESENSE_CONNECTION_TIMEOUT_SECONDS=2
+```
+
+---
+
 ## 📖 Best Practices
 
 - Validate your API keys and model parameters thoroughly before deployment.
@@ -90,8 +141,8 @@ After adjusting settings, restart your service or action to apply your changes.
 
 ## 🔰 Contributing
 
-- **🐛 [Report Issues](https://github.com/TrueSelph/deepdoc_store_action/issues)**: Submit reports for bugs identified or feature requests.
-- **💡 [Submit Pull Requests](https://github.com/TrueSelph/deepdoc_store_action/blob/main/CONTRIBUTING.md)**: Review open PRs and submit your implementations.
+- **🐛 [Report Issues](https://github.com/TrueSelph/deepdoc_client_action/issues)**: Submit reports for bugs identified or feature requests.
+- **💡 [Submit Pull Requests](https://github.com/TrueSelph/deepdoc_client_action/blob/main/CONTRIBUTING.md)**: Review open PRs and submit your implementations.
 
 <details>
 <summary>Contributing Guidelines</summary>
@@ -99,7 +150,7 @@ After adjusting settings, restart your service or action to apply your changes.
 1. **Fork** the repository using GitHub’s fork button.
 2. **Clone** your fork locally:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/deepdoc_store_action
+   git clone https://github.com/YOUR_USERNAME/deepdoc_client_action
    ```
 3. **Create** a new descriptive branch:
    ```bash
@@ -122,8 +173,8 @@ After adjusting settings, restart your service or action to apply your changes.
 <summary>Contributor Graph</summary>
 <br>
 <p align="left">
-    <a href="https://github.com/TrueSelph/deepdoc_store_action/graphs/contributors">
-        <img src="https://contrib.rocks/image?repo=TrueSelph/deepdoc_store_action" />
+    <a href="https://github.com/TrueSelph/deepdoc_client_action/graphs/contributors">
+        <img src="https://contrib.rocks/image?repo=TrueSelph/deepdoc_client_action" />
    </a>
 </p>
 </details>
