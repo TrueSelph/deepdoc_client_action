@@ -157,6 +157,9 @@ node DeepDocClientAction :Action: {
                     });
                 }
 
+                # update the agent descriptor with changes
+                self.get_agent().export_descriptor();
+
                 return response_data["job_id"];
             } else {
                 self.logger.error("Response does not contain job_id.");
@@ -329,6 +332,9 @@ node DeepDocClientAction :Action: {
                 }
             }
 
+            # update the agent descriptor with changes
+            self.get_agent().export_descriptor();
+
             return True;
 
         } except Exception as e {
@@ -434,6 +440,7 @@ node DeepDocClientAction :Action: {
                 "file_type": file["type"],
                 "chunk_ids": []
             });
+
             return True;
 
         } else {
@@ -484,6 +491,10 @@ node DeepDocClientAction :Action: {
             }
 
             self.doc_manifest[job_id] = updated_entries;
+
+            # update the agent descriptor with changes
+            self.get_agent().export_descriptor();
+
             return True;
         } else {
             self.logger.error(f"Job ID {job_id} not found in doc manifest.");
@@ -505,6 +516,10 @@ node DeepDocClientAction :Action: {
             }
             # Remove the job ID from the doc_manifest
             del self.doc_manifest[job_id];
+
+            # update the agent descriptor with changes
+            self.get_agent().export_descriptor();
+
             return True;
         } else {
             self.logger.error(f"Job ID {job_id} not found in doc manifest.");
