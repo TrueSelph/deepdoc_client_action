@@ -7,3 +7,7 @@
 ## 0.0.3
 - Updated action to update descriptor export on doc_manifest update
 - Updated action to allow custom metadata to be added to each document ingested
+
+## 0.0.4
+- Patched file_path bug in action
+- Updated docs to include API docs

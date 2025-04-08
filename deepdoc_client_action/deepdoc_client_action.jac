@@ -445,6 +445,12 @@ node DeepDocClientAction :Action: {
             # retrieve file url
             srv_source = file_interface.get_file_url(f"ddc/{output_filename}");
 
+            # if the file url is not available, set the source to the filename
+            if not srv_source {
+                self.logger.error(f"Unable to save file {output_filename} to the file system.");
+                srv_source = "";
+            }
+
             # Initialize the doc_manifest entry for the job_id if it does not exist
             if job_id not in self.doc_manifest.keys() {
                 self.doc_manifest[job_id] = [];
@@ -460,7 +466,7 @@ node DeepDocClientAction :Action: {
 
             # Append the file details to the doc_manifest entry if no duplicate is found
             self.doc_manifest[job_id].append({
-                "file_path": "",
+                "file_path": srv_source,
                 "filename": file["name"],
                 "file_type": file["type"],
                 "metadata": file.get("metadata", {}),
@@ -485,9 +491,6 @@ node DeepDocClientAction :Action: {
                     # Update the entry with new file details
                     if "file_path" in file {
                         item["file_path"] = file["file_path"];
-                    }
-                    if "file_type" in file {
-                        item["file_type"] = file["file_type"];
                     }
                     item["metadata"] = file.get("metadata", {});
                     return True;
