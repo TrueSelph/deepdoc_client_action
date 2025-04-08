@@ -68,8 +68,49 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             key=f"{model_key}_doc_urls",
         )
 
-        # Process URLs into a list
+        metadatas = st.text_area(
+            "Enter metadata (JSON format, one per line)",
+            height=150,
+            help="Example: {'author': 'John Doe', 'category': 'Finance'}",
+            key=f"{model_key}_metadatas",
+        )
+
+        # Custom parameters section
+        from_page = st.number_input(
+            "From Page",
+            min_value=0,
+            value=0,
+            help="Specify the starting page number for processing",
+            key=f"{model_key}_from_page",
+        )
+        to_page = st.number_input(
+            "To Page",
+            min_value=1,
+            value=100000,
+            help="Specify the ending page number for processing",
+            key=f"{model_key}_to_page",
+        )
+        lang = st.text_input(
+            "Language",
+            value="english",
+            help="Specify the language of the documents",
+            key=f"{model_key}_lang",
+        )
+
+        # Process inputs
         url_list = [url.strip() for url in doc_urls.split("\n") if url.strip()]
+        metadata_list = []
+        if metadatas.strip():
+            try:
+                metadata_list = [
+                    eval(line.strip()) for line in metadatas.split("\n") if line.strip()
+                ]
+                if len(metadata_list) != len(doc_uploads) + len(url_list):
+                    st.warning(
+                        "The number of metadata entries must match the total number of documents (uploaded + URLs)."
+                    )
+            except Exception as e:
+                st.error(f"Invalid metadata format: {e}")
 
         # Validation message
         if not doc_uploads and not url_list:
@@ -79,20 +120,19 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             # Prepare the payload
             payload = {
                 "urls": url_list if url_list else [],
-                "from_page": 0,
-                "to_page": 10000000,
-                "lang": "english",
+                "metadatas": metadata_list if metadata_list else [],
+                "from_page": from_page,
+                "to_page": to_page,
+                "lang": lang,
             }
 
             # Prepare files list (if any)
+            files = []
             if doc_uploads:
-                files = []
                 for selected_file in doc_uploads:
                     files.append(
                         (selected_file.name, selected_file.read(), selected_file.type)
                     )
-            else:
-                files = []
 
             # Call the parse_pdfs walker
             result = call_action_walker_exec(
@@ -103,9 +143,8 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 # Display number of processed files
                 total_processed = len(doc_uploads) + len(url_list)
                 st.success(
-                    f" {total_processed} document(s) submitted for processing under job ID [ {result} ] "
+                    f"{total_processed} document(s) submitted for processing under job ID [ {result} ]"
                 )
-
             else:
                 st.error(
                     "Failed to process documents. Please check your inputs and try again."
@@ -119,7 +158,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
         if document_list:
             # Display the list of documents
             for index, document in enumerate(document_list, start=1):
-                col1, col2, col3, col4 = st.columns([6, 2, 2, 1])
+                col1, col2, col3, col4, col5 = st.columns([4, 4, 2, 1, 1])
                 with col1:
                     # Display document name as a hyperlink
                     st.markdown(
@@ -127,9 +166,17 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         unsafe_allow_html=True,
                     )
                 with col2:
+                    # Display metadata if available
+                    metadata = document.get("metadata", {})
+                    if metadata:
+                        st.json(metadata)
+                    else:
+                        st.text("No Metadata")
+                with col3:
                     # Display file type
                     st.text(document["file_type"])
-                with col3:
+
+                with col4:
                     # Show "Delete" button if chunk_ids is not empty, otherwise show "Processing"
                     if document.get("chunk_ids"):
                         if st.button(
@@ -159,7 +206,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                                 )
                     else:
                         st.text("Processing")
-                with col4:
+                with col5:
                     # Add a refresh icon button next to "Processing"
                     if not document.get("chunk_ids") and st.button(
                         "🔄",

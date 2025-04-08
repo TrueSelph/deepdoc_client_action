@@ -44,6 +44,7 @@ node DeepDocClientAction :Action: {
     can queue_deepdoc_job(
         urls:list[str]=[],
         files:list[dict]=[],
+        metadatas:list[dict]=[],
         from_page:int=0,
         to_page:int=100000,
         lang:str="english",
@@ -56,6 +57,7 @@ node DeepDocClientAction :Action: {
         # Args:
         #     urls (list[str]): List of document URLs to process.
         #     files (list[bytes]): List of file contents to process.
+        #     metadatas (list[dict]): List of metadata dictionaries for each file.
         #     from_page (int): Starting page number for processing.
         #     to_page (int): Ending page number for processing.
         #     lang (str): Language of the documents.
@@ -145,7 +147,7 @@ node DeepDocClientAction :Action: {
             if "job_id" in response_data {
 
                 # now we archive the uploaded file(s) as under job_id in the doc_manifest
-                for file_tuple in files_data {
+                for (index, file_tuple) in enumerate(files_data) {
                     file_name = file_tuple[1][0];
                     file_content = file_tuple[1][1];
                     file_type = file_tuple[1][2];
@@ -153,9 +155,13 @@ node DeepDocClientAction :Action: {
                     self.add_doc_manifest_entry(job_id=response_data["job_id"], file={
                         "name": file_name,
                         "content": file_content,
-                        "type": file_type
+                        "type": file_type,
+                        "metadata": metadatas[index] if metadatas and index < len(metadatas) else {}
                     });
                 }
+
+                # update the agent descriptor with changes
+                self.get_agent().export_descriptor();
 
                 return response_data["job_id"];
             } else {
@@ -304,6 +310,17 @@ node DeepDocClientAction :Action: {
                     "job_id": job_id
                 };
 
+                # add any custom metadata to the filtered_metadata dict
+                if (doc_manifest_entry := self.get_doc_manifest_entry(job_id=job_id, filename=filtered_metadata["filename"])) {
+                    filtered_metadata.update(doc_manifest_entry["metadata"]);
+                    # update the manifest entry with the consolidated metadata
+                    self.update_doc_manifest_entry(
+                        job_id=job_id,
+                        filename=filtered_metadata["filename"],
+                        file={"metadata": filtered_metadata}
+                    );
+                }
+
                 # compose the path to file and update source
                 srv_filename = f"ddc/{job_id}_{filtered_metadata['filename']}";
                 srv_source = file_interface.get_file_url(srv_filename);
@@ -328,6 +345,9 @@ node DeepDocClientAction :Action: {
                     self.logger.info(f"{chunk_id} added to vector store with metadata: {filtered_metadata}");
                 }
             }
+
+            # update the agent descriptor with changes
+            self.get_agent().export_descriptor();
 
             return True;
 
@@ -375,6 +395,7 @@ node DeepDocClientAction :Action: {
                     "file_path": file["file_path"],
                     "filename": file["filename"],
                     "file_type": file["file_type"],
+                    "metadata": file["metadata"],
                     "chunk_ids": file["chunk_ids"]
                 });
             }
@@ -413,8 +434,9 @@ node DeepDocClientAction :Action: {
 
     can add_doc_manifest_entry(job_id:str, file:dict) -> bool {
         # Adds a new entry to the document manifest for a specific job ID.
+        # Prevents duplicate entries from being added.
 
-        if "name" in file and "content" in file and "type" in file {
+        if "name" in file and "type" in file and "content" in file {
 
             output_filename = f"{job_id}_{file['name']}";
             output_file_path = f"ddc/{output_filename}";
@@ -427,17 +449,54 @@ node DeepDocClientAction :Action: {
             if job_id not in self.doc_manifest.keys() {
                 self.doc_manifest[job_id] = [];
             }
-            # Append the file details to the doc_manifest entry
+
+            # Check for duplicates
+            for entry in self.doc_manifest[job_id] {
+                if entry["filename"] == file["name"] {
+                    self.logger.error(f"Duplicate entry for file '{file['name']}' in job ID '{job_id}'.");
+                    return False;
+                }
+            }
+
+            # Append the file details to the doc_manifest entry if no duplicate is found
             self.doc_manifest[job_id].append({
-                "file_path": srv_source or output_file_path,
+                "file_path": "",
                 "filename": file["name"],
                 "file_type": file["type"],
-                "chunk_ids": []
+                "metadata": file.get("metadata", {}),
+                "chunk_ids": file.get("chunk_ids", [])
             });
+
             return True;
 
         } else {
             self.logger.error(f"Invalid file format: {file}");
+            return False;
+        }
+    }
+
+    can update_doc_manifest_entry(job_id:str, filename:str, file:dict) -> bool {
+        # Updates an existing entry in the document manifest for a specific job ID.
+
+        if job_id in self.doc_manifest.keys() {
+            # Find the entry for the specified filename
+            for item in self.doc_manifest[job_id] {
+                if item["filename"] == filename {
+                    # Update the entry with new file details
+                    if "file_path" in file {
+                        item["file_path"] = file["file_path"];
+                    }
+                    if "file_type" in file {
+                        item["file_type"] = file["file_type"];
+                    }
+                    item["metadata"] = file.get("metadata", {});
+                    return True;
+                }
+            }
+            self.logger.error(f"Filename {filename} not found in doc manifest for job ID {job_id}.");
+            return False;
+        } else {
+            self.logger.error(f"Job ID {job_id} not found in doc manifest.");
             return False;
         }
     }
@@ -484,6 +543,10 @@ node DeepDocClientAction :Action: {
             }
 
             self.doc_manifest[job_id] = updated_entries;
+
+            # update the agent descriptor with changes
+            self.get_agent().export_descriptor();
+
             return True;
         } else {
             self.logger.error(f"Job ID {job_id} not found in doc manifest.");
@@ -505,6 +568,10 @@ node DeepDocClientAction :Action: {
             }
             # Remove the job ID from the doc_manifest
             del self.doc_manifest[job_id];
+
+            # update the agent descriptor with changes
+            self.get_agent().export_descriptor();
+
             return True;
         } else {
             self.logger.error(f"Job ID {job_id} not found in doc manifest.");
