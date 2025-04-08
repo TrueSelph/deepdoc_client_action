@@ -12,6 +12,7 @@ walker add_documents :interact_graph_walker: {
 
     has urls:list[str] = [];
     has files:list[dict] = [];
+    has metadatas:list[dict]=[];
     has from_page:int = 0;
     has to_page:int = 100000;
     has lang:str = "english";
@@ -49,6 +50,7 @@ walker add_documents :interact_graph_walker: {
         self.response = here.queue_deepdoc_job(
             urls=self.urls,
             files=self.files,
+            metadatas=self.metadatas,
             from_page=self.from_page,
             to_page=self.to_page,
             lang=self.lang,
