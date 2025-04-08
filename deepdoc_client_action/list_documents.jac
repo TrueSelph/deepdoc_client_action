@@ -8,7 +8,7 @@ import:jac from jivas.agent.action.interact_graph_walker { interact_graph_walker
 
 
 walker list_documents :interact_graph_walker: {
-    # action endpoint for deepdoc processing and vector_store ingestion
+    # action endpoint for listing all documents processed by the deepdoc service
 
     has response:list[dict] = [];
 

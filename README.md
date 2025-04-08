@@ -31,7 +31,7 @@ This package is defined as a singleton action, requiring the Jivas library (vers
 
 ## Meta Information
 
-- **Title:** DeepDoc Store Action
+- **Title:** DeepDoc Client Action
 - **Group:** core
 - **Type:** action
 
@@ -42,6 +42,92 @@ This package is defined as a singleton action, requiring the Jivas library (vers
 ## Dependencies
 
 - **Jivas:** `^2.0.0`
+
+---
+
+## API Usage
+
+The DeepDoc Client Action can be accessed via an API endpoint to perform various operations using different walkers. The standard endpoint for interfacing with operations is `/action/walker`. Below are the details and examples for each walker that can be called:
+
+### Endpoint
+
+`POST /action/walker`
+
+### Required Parameters
+
+- `agent_id`: The ID of the agent
+- `module_root`: For this action, the module root will be `'actions.jivas.deepdoc_client_action'`
+- `walker`: The name of the walker (e.g., `list_documents`, `add_documents`, `delete_documents`)
+- `args`: The arguments passed to the respective walker
+- `files`: A list of files for upload, supplied as a list of dictionaries, each containing `name`, `content`, and `type`.
+
+### Walkers and Payload Examples
+
+#### 1. Add Documents
+
+This walker processes documents and ingests them into the vector store.
+
+**Payload Example:**
+
+```json
+{
+  "agent_id": "12345",
+  "module_root": "actions.jivas.deepdoc_client_action",
+  "walker": "add_documents",
+  "args": {
+    "urls": ["http://example.com/document.pdf"],
+    "files": [],
+    "metadatas": [{"author": "John Doe"}],
+    "from_page": 0,
+    "to_page": 100000,
+    "lang": "english"
+  },
+  "files": [
+    {
+      "name": "document1.pdf",
+      "content": "byte data",
+      "type": "application/pdf"
+    }
+  ]
+}
+```
+
+#### 2. List Documents
+
+This walker lists all documents processed by the deepdoc service.
+
+**Payload Example:**
+
+```json
+{
+  "agent_id": "12345",
+  "module_root": "actions.jivas.deepdoc_client_action",
+  "walker": "list_documents",
+  "args": {}
+}
+```
+
+#### 3. Delete Documents
+
+This walker removes documents from the vector store and deletes local file system entries.
+
+**Payload Example:**
+
+```json
+{
+  "agent_id": "12345",
+  "module_root": "actions.jivas.deepdoc_client_action",
+  "walker": "delete_documents",
+  "args": {
+    "documents": [
+      {
+        "job_id": "67890",
+        "filename": "document1.pdf"
+      }
+    ]
+  }
+}
+```
 
 ---
 
@@ -83,7 +169,7 @@ Alternatively, you can configure these variables within the **action app's setti
 
 From within the action's configuration page:
 
-1. Navigate to your **JIVAS Manangr Dashboard**.
+1. Navigate to your **JIVAS Manager Dashboard**.
 2. Find and select **DeepDoc Client Action** under Actions.
 3. Enter the required configuration values (such as `api_url`, `api_key`, and `vector_store_action`) into their respective configuration fields.
 4. Save the configuration once complete.

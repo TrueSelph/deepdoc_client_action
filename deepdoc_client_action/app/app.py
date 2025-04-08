@@ -160,11 +160,14 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             for index, document in enumerate(document_list, start=1):
                 col1, col2, col3, col4, col5 = st.columns([4, 4, 2, 1, 1])
                 with col1:
-                    # Display document name as a hyperlink
-                    st.markdown(
-                        f"[{document['filename']}]({document['file_path']})",
-                        unsafe_allow_html=True,
-                    )
+                    # Display document name as a hyperlink if file_path has a value
+                    if document.get("file_path"):
+                        st.markdown(
+                            f"[{document['filename']}]({document['file_path']})",
+                            unsafe_allow_html=True,
+                        )
+                    else:
+                        st.text(document["filename"])
                 with col2:
                     # Display metadata if available
                     metadata = document.get("metadata", {})

@@ -8,7 +8,7 @@ import:jac from jivas.agent.action.interact_graph_walker { interact_graph_walker
 
 
 walker delete_documents :interact_graph_walker: {
-    # action endpoint for deepdoc processing and vector_store ingestion
+    # action endpoint which removes documents from the vector store and deletes the local file system entries
 
     # a list of {job_id, filename} pairs for removal
     has documents:list[dict] = [];
