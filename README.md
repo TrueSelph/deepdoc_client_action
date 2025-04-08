@@ -6,7 +6,6 @@
 ![GitHub pull requests](https://img.shields.io/github/issues-pr/TrueSelph/deepdoc_client_action)
 ![GitHub](https://img.shields.io/github/license/TrueSelph/deepdoc_client_action)
 
-
 The **DeepDoc Client Action** interfaces with the JIVAS [DeepDoc](https://github.com/infiniflow/ragflow/blob/main/deepdoc) service for document processing, chunking, metadata extraction, document handling, serving, and integrated management. Users can upload documents or URLs in batches across multiple formats, including PDF, DOCX, Excel, PPT, and TXT. Processing occurs asynchronously, culminating in ingestion and indexing within your configured vector store.
 
 ## Document Handling & Management
@@ -21,7 +20,6 @@ The **DeepDoc Client Action** now provides comprehensive document handling and m
 
 - **Duplicate Prevention Safeguards**:
   Duplicate processing of documents is automatically prevented. The system verifies and ensures that each uploaded document is unique within the repository and vector store, eliminating redundancy and potential confusion.
-
 
 This package is defined as a singleton action, requiring the Jivas library (version **2.0.0 or higher**) and a properly configured `vector_store_action`. It also requires the Jivas-modified DeepDoc service.
 
@@ -134,7 +132,6 @@ TYPESENSE_CONNECTION_TIMEOUT_SECONDS=2
 
 ---
 
-
 ## 📖 Best Practices
 
 - Validate your API keys and model parameters thoroughly before deployment.
@@ -143,7 +140,6 @@ TYPESENSE_CONNECTION_TIMEOUT_SECONDS=2
 ---
 
 ## 🔰 Contributing
-
 
 - **🐛 [Report Issues](https://github.com/TrueSelph/deepdoc_client_action/issues)**: Submit reports for bugs identified or feature requests.
 - **💡 [Submit Pull Requests](https://github.com/TrueSelph/deepdoc_client_action/blob/main/CONTRIBUTING.md)**: Review open PRs and submit your implementations.
@@ -154,9 +150,7 @@ TYPESENSE_CONNECTION_TIMEOUT_SECONDS=2
 1. **Fork** the repository using GitHub’s fork button.
 2. **Clone** your fork locally:
    ```bash
-
    git clone https://github.com/YOUR_USERNAME/deepdoc_client_action
-
    ```
 3. **Create** a new descriptive branch:
    ```bash
@@ -179,7 +173,6 @@ TYPESENSE_CONNECTION_TIMEOUT_SECONDS=2
 <summary>Contributor Graph</summary>
 <br>
 <p align="left">
-
     <a href="https://github.com/TrueSelph/deepdoc_client_action/graphs/contributors">
         <img src="https://contrib.rocks/image?repo=TrueSelph/deepdoc_client_action" />
    </a>
@@ -193,4 +186,3 @@ TYPESENSE_CONNECTION_TIMEOUT_SECONDS=2
 This project is licensed under the **Apache License 2.0**. See the [LICENSE](../LICENSE) file for additional licensing information.
 
 ---
-
