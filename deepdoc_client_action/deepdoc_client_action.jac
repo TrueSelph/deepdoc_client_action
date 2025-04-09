@@ -148,12 +148,12 @@ node DeepDocClientAction :Action: {
 
                 # now we archive the uploaded file(s) as under job_id in the doc_manifest
                 for (index, file_tuple) in enumerate(files_data) {
-                    file_name = file_tuple[1][0];
+                    filename = file_tuple[1][0];
                     file_content = file_tuple[1][1];
                     file_type = file_tuple[1][2];
 
                     self.add_doc_manifest_entry(job_id=response_data["job_id"], file={
-                        "name": file_name,
+                        "name": filename,
                         "content": file_content,
                         "type": file_type,
                         "metadata": metadatas[index] if metadatas and index < len(metadatas) else {}
@@ -209,34 +209,6 @@ node DeepDocClientAction :Action: {
             self.logger.error(f"Exception occurred while getting job status: {str(e)}");
             self.logger.error(traceback.format_exc());
             return {"status": "error", "error": str(e)};
-        }
-    }
-
-    can cancel_deepdoc_job(job_id:str) -> bool {
-        # """
-        # Cancels a queued job in the DeepDoc service.
-
-        # Args:
-        #     job_id (str): The ID of the job to cancel.
-
-        # Returns:
-        #     bool: True if the cancellation was successful, False otherwise.
-        # """
-        try {
-            # Make the DELETE request to cancel the job
-            response = requests.delete(f"{self.api_url}/job/{job_id}");
-
-            # Check if the response is successful
-            if response.status_code != 200 {
-                self.logger.error(f"Failed to cancel job: {response.text}");
-                return False;
-            }
-
-            return True;
-        } except Exception as e {
-            self.logger.error(f"Exception occurred while cancelling job: {str(e)}");
-            self.logger.error(traceback.format_exc());
-            return False;
         }
     }
 
@@ -322,7 +294,7 @@ node DeepDocClientAction :Action: {
                 }
 
                 # compose the path to file and update source
-                srv_filename = f"ddc/{job_id}_{filtered_metadata['filename']}";
+                srv_filename = f"ddc/{job_id}_{self.format_filename(filtered_metadata['filename'])}";
                 srv_source = file_interface.get_file_url(srv_filename);
                 if srv_source {
                     filtered_metadata["source"] = srv_source;
@@ -438,7 +410,8 @@ node DeepDocClientAction :Action: {
 
         if "name" in file and "type" in file and "content" in file {
 
-            output_filename = f"{job_id}_{file['name']}";
+            # ensure the output filename is without whitespaces and slashes
+            output_filename = f"{job_id}_{self.format_filename(file['name'])}";
             output_file_path = f"ddc/{output_filename}";
             # save document to the file system
             file_interface.save_file(output_file_path, file["content"]);
@@ -539,7 +512,7 @@ node DeepDocClientAction :Action: {
             if len(updated_entries) < len(self.doc_manifest[job_id]) and not manifest_only {
                 # Attempt to delete the file from the filesystem
                 try {
-                    file_interface.delete_file(f"ddc/{job_id}_{filename}");
+                    file_interface.delete_file(f"ddc/{job_id}_{self.format_filename(filename)}");
                 } except Exception as e {
                     self.logger.error(f"Failed to delete file from filesystem: {str(e)}");
                 }
@@ -620,6 +593,21 @@ node DeepDocClientAction :Action: {
         }
 
         return success;
+    }
+
+    can format_filename(filename:str) -> str {
+        # Formats the filename by removing spaces and slashes.
+        # Returns the formatted filename.
+
+        if not filename {
+            self.logger.error("Filename is empty or None.");
+            return filename;
+        }
+
+        # Remove spaces and slashes from the filename
+        formatted_filename = filename.replace(" ", "_").replace("/", "_").replace("\\", "_");
+
+        return formatted_filename;
     }
 
 

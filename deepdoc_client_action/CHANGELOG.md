@@ -11,3 +11,6 @@
 ## 0.0.4
 - Patched file_path bug in action
 - Updated docs to include API docs
+
+## 0.0.5
+- Catered for spaces in document filenames which affect the rendering of URLs
