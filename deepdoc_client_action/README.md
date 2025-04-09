@@ -76,7 +76,6 @@ This walker processes documents and ingests them into the vector store.
   "walker": "add_documents",
   "args": {
     "urls": ["http://example.com/document.pdf"],
-    "files": [],
     "metadatas": [{"author": "John Doe"}],
     "from_page": 0,
     "to_page": 100000,
