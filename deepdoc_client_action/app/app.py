@@ -1,5 +1,8 @@
 """This module contains the Streamlit app for the Typesense Vector Store Action"""
 
+import time
+from datetime import datetime
+
 import streamlit as st
 from jvcli.client.lib.utils import call_action_walker_exec
 from jvcli.client.lib.widgets import app_header, app_update_action
@@ -156,67 +159,114 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
         document_list = call_action_walker_exec(agent_id, module_root, "list_documents")
 
         if document_list:
-            # Display the list of documents
-            for index, document in enumerate(document_list, start=1):
-                col1, col2, col3, col4, col5 = st.columns([4, 4, 2, 1, 1])
-                with col1:
-                    # Display document name as a hyperlink if file_path has a value
-                    if document.get("file_path"):
-                        st.markdown(
-                            f"[{document['filename']}]({document['file_path']})",
-                            unsafe_allow_html=True,
-                        )
-                    else:
-                        st.text(document["filename"])
-                with col2:
-                    # Display metadata if available
-                    metadata = document.get("metadata", {})
-                    if metadata:
-                        st.json(metadata)
-                    else:
-                        st.text("No Metadata")
-                with col3:
-                    # Display file type
-                    st.text(document["file_type"])
+            # Check if any documents are still processing
+            any_processing = any(not doc.get("chunk_ids") for doc in document_list)
 
-                with col4:
-                    # Show "Delete" button if chunk_ids is not empty, otherwise show "Processing"
-                    if document.get("chunk_ids"):
-                        if st.button(
-                            "Delete",
-                            key=f"delete_{index}_{document['job_id']}_{document['filename']}",
-                        ):
-                            # Prepare arguments for deletion
-                            args = {
-                                "documents": [
-                                    {
-                                        "job_id": document["job_id"],
-                                        "filename": document["filename"],
-                                    }
-                                ]
+            # Group documents by job_id
+            jobs: dict = {}
+            for document in document_list:
+                job_id = document["job_id"]
+                if job_id not in jobs:
+                    jobs[job_id] = []
+                jobs[job_id].append(document)
+
+            # Display documents grouped by job_id
+            for job_id, documents in jobs.items():
+                # Check if any document in this job is still processing (no chunk_ids)
+                has_processing = any(not doc.get("chunk_ids") for doc in documents)
+
+                st.subheader(f"Job: {job_id}")
+
+                # Display cancel button for the entire job if any documents are processing
+                if has_processing and st.button(
+                    "Cancel Job", key=f"cancel_job_{job_id}"
+                ):
+                    # Prepare arguments for cancellation - all processing documents in this job
+                    args = {
+                        "documents": [
+                            {
+                                "job_id": doc["job_id"],
+                                "filename": doc["filename"],
                             }
-                            # Call the delete_documents walker
-                            delete_result = call_action_walker_exec(
-                                agent_id, module_root, "delete_documents", args
-                            )
-                            if delete_result:
-                                st.success(
-                                    f"Document {document['filename']} deleted successfully."
-                                )
-                            else:
-                                st.error(
-                                    f"Failed to delete document {document['filename']}."
-                                )
+                            for doc in documents
+                            if not doc.get("chunk_ids")
+                        ]
+                    }
+                    # Call the cancel_documents walker
+                    cancel_result = call_action_walker_exec(
+                        agent_id, module_root, "cancel_documents", args
+                    )
+                    if cancel_result:
+                        st.rerun()
+                        st.success(f"Job {job_id} cancelled successfully.")
                     else:
-                        st.text("Processing")
-                with col5:
-                    # Add a refresh icon button next to "Processing"
-                    if not document.get("chunk_ids") and st.button(
-                        "🔄",
-                        key=f"refresh_{index}_{document['job_id']}_{document['filename']}",
-                    ):
-                        st.session_state["refresh_trigger"] = not st.session_state.get(
-                            "refresh_trigger", False
-                        )
+                        st.error(f"Failed to cancel job {job_id}.")
+
+                # Display each document in the job
+                for index, document in enumerate(documents, start=1):
+                    col1, col2, col3, col4 = st.columns([4, 4, 2, 1])
+                    with col1:
+                        # Display document name as a hyperlink if file_path has a value
+                        if document.get("file_path"):
+                            st.markdown(
+                                f"[{document['filename']}]({document['file_path']})",
+                                unsafe_allow_html=True,
+                            )
+                        else:
+                            st.text(document["filename"])
+                    with col2:
+                        # Display metadata if available
+                        metadata = document.get("metadata", {})
+                        if metadata:
+                            st.json(metadata)
+                        else:
+                            st.text("No Metadata")
+                    with col3:
+                        # Display file type
+                        st.text(document["file_type"])
+                    with col4:
+                        # Show "Delete" button if chunk_ids is not empty, otherwise show "Processing"
+                        if document.get("chunk_ids"):
+                            if st.button(
+                                "Delete",
+                                key=f"delete_{index}_{document['job_id']}_{document['filename']}",
+                            ):
+                                # Prepare arguments for deletion
+                                args = {
+                                    "documents": [
+                                        {
+                                            "job_id": document["job_id"],
+                                            "filename": document["filename"],
+                                        }
+                                    ]
+                                }
+                                # Call the delete_documents walker
+                                delete_result = call_action_walker_exec(
+                                    agent_id, module_root, "delete_documents", args
+                                )
+                                if delete_result:
+                                    st.rerun()
+                                    st.success(
+                                        f"Document {document['filename']} deleted successfully."
+                                    )
+                                else:
+                                    st.error(
+                                        f"Failed to delete document {document['filename']}."
+                                    )
+                        else:
+                            st.text("Processing")
+
+                st.divider()  # Add a divider between job groups
+
+            # Display last refresh time
+            last_refresh = datetime.now().strftime("%H:%M:%S")
+            refresh_status = st.empty()
+            refresh_status.caption(f"Last refreshed: {last_refresh}")
+
+            # Auto-refresh every 3 seconds if any documents are processing
+            if any_processing:
+                time.sleep(3)
+                st.rerun()
+
         else:
             st.info("No documents found. Your uploaded documents will be shown here.")
