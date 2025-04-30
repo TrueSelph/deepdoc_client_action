@@ -19,6 +19,7 @@ node DeepDocClientAction :Action: {
     has base_url:str = os.environ.get('JIVAS_BASE_URL', '');
     has vector_store_action:str = "TypesenseVectorStoreAction";
     has doc_manifest:dict = {};
+    has cancelled_jobs:list = [];
 
     can healthcheck() {
         # """
@@ -161,7 +162,7 @@ node DeepDocClientAction :Action: {
                 }
 
                 # update the agent descriptor with changes
-                self.get_agent().export_descriptor();
+                self.get_agent().dump_descriptor();
 
                 return response_data["job_id"];
             } else {
@@ -319,7 +320,7 @@ node DeepDocClientAction :Action: {
             }
 
             # update the agent descriptor with changes
-            self.get_agent().export_descriptor();
+            self.get_agent().dump_descriptor();
 
             return True;
 
@@ -518,10 +519,15 @@ node DeepDocClientAction :Action: {
                 }
             }
 
-            self.doc_manifest[job_id] = updated_entries;
+            if updated_entries {
+                self.doc_manifest[job_id] = updated_entries;
+            } else {
+                self.cancelled_jobs.append(job_id);
+                del self.doc_manifest[job_id];
+            }
 
             # update the agent descriptor with changes
-            self.get_agent().export_descriptor();
+            self.get_agent().dump_descriptor();
 
             return True;
         } else {
@@ -546,7 +552,7 @@ node DeepDocClientAction :Action: {
             del self.doc_manifest[job_id];
 
             # update the agent descriptor with changes
-            self.get_agent().export_descriptor();
+            self.get_agent().dump_descriptor();
 
             return True;
         } else {

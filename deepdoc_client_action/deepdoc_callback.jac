@@ -42,6 +42,12 @@ walker deepdoc_callback :interact_graph_walker: {
         status = self.params.get("status", "");
         error_message = self.params.get("error", "");
 
+        # quietly ignore cancelled jobs
+        if job_id in here.cancelled_jobs {
+            here.cancelled_jobs.remove(job_id);
+            return None;
+        }
+
         if status == "completed" {
             # Retrieve the deepdoc job data
             job_data = here.get_deepdoc_job(job_id=job_id);
