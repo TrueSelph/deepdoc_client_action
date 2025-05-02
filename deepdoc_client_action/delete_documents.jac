@@ -47,21 +47,13 @@ walker delete_documents :interact_graph_walker: {
                 continue;
             }
 
-            # remove the document entries from the vector store
-            if not here.remove_doc_vector_store_entries(
-                job_id=doc.get("job_id", ""),
-                filename=doc.get("filename", "")
-            ) {
-                success = False;
-                continue;
-            }
-
-            # remove the document from the local file system
-            if not here.delete_doc_manifest_entry(
+            # remove the document
+            if not here.delete_doc_entry(
                 doc.get("job_id", ""),
                 doc.get("filename", "")
             ) {
                 success = False;
+                break;
             }
         }
 

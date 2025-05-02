@@ -13,6 +13,7 @@ walker list_documents :interact_graph_walker: {
 
     has page:int = 1;
     has per_page:int = 10;
+    has all:bool = False;  # new flag to indicate whether to return all documents
     has response:list[dict] = [];
 
     # set up logger
@@ -27,9 +28,13 @@ walker list_documents :interact_graph_walker: {
     }
 
     can on_action with Action entry {
-        # get the paged list of documents from the manifest
-        paginator = JobPaginator(here.doc_manifest);
-        self.response = paginator.get_page(page=self.page, per_page=self.per_page);
-    }
+        # get the list of documents from the manifest
 
+        if self.all {
+            self.response = here.get_doc_entries();  # fetch all documents
+        } else {
+            paginator = JobPaginator(here.doc_manifest);
+            self.response = paginator.get_page(page=self.page, per_page=self.per_page);  # fetch paged documents
+        }
+    }
 }
