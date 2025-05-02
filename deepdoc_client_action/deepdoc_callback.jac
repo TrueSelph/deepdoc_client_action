@@ -50,7 +50,7 @@ walker deepdoc_callback :interact_graph_walker: {
 
         if status == "completed" {
             # Retrieve the deepdoc job data
-            job_data = here.get_deepdoc_job(job_id=job_id);
+            job_data = here.get_deepdoc_job_status(job_id=job_id);
 
             if job_id and job_data {
                 try {
@@ -62,12 +62,12 @@ walker deepdoc_callback :interact_graph_walker: {
                 }
             } else {
                 self.logger.error("DeepDoc job data is incomplete or missing");
-                here.delete_doc_manifest_job(job_id=job_id);
+                here.delete_doc_job(job_id=job_id);
                 self.response = False;
             }
         } else {
             self.logger.error(f"DeepDoc job failed with status: {status} - {error_message}");
-            here.delete_doc_manifest_job(job_id=job_id);
+            here.delete_doc_job(job_id=job_id);
             self.response = False;
         }
     }
