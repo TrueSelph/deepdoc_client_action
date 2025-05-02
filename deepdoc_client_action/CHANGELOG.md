@@ -20,3 +20,4 @@
 
 ## 0.0.7
 - Added document URL support
+- Added pagination for document list by job

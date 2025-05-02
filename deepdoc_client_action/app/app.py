@@ -54,7 +54,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
         app_update_action(agent_id, action_id)
 
     # add documents section
-    with st.expander("Add Documents", True):
+    with st.expander("Add Documents", False):
         # File upload section
         doc_uploads = st.file_uploader(
             "Upload documents",
@@ -155,37 +155,80 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
     # add document list section
     with st.expander("Document List", True):
-        # Fetch the document list
-        document_list = call_action_walker_exec(agent_id, module_root, "list_documents")
+        # Initialize session state variables for pagination
+        if "current_page" not in st.session_state:
+            st.session_state.current_page = 1
+        if "per_page" not in st.session_state:
+            st.session_state.per_page = 10
 
-        if document_list:
-            # Check if any documents are still processing
-            any_processing = any(not doc.get("chunk_ids") for doc in document_list)
+        # Pagination controls at the top
+        col1, col2, col3 = st.columns([2, 4, 2])
+        with col1:
+            # Per-page selection dropdown
+            per_page = st.selectbox(
+                "Items per page",
+                options=[5, 10, 20, 50],
+                index=[5, 10, 20, 50].index(st.session_state.per_page),
+                key="per_page_selector",
+                on_change=lambda: setattr(st.session_state, "current_page", 1),
+            )
+            st.session_state.per_page = per_page
 
-            # Group documents by job_id
-            jobs: dict = {}
-            for document in document_list:
-                job_id = document["job_id"]
-                if job_id not in jobs:
-                    jobs[job_id] = []
-                jobs[job_id].append(document)
+        # Fetch documents with pagination parameters
+        args = {
+            "page": st.session_state.current_page,
+            "per_page": st.session_state.per_page,
+        }
+        document_response = call_action_walker_exec(
+            agent_id, module_root, "list_documents", args
+        )
+
+        if document_response and "items" in document_response:
+            document_list = document_response["items"]
+            pagination = document_response.get("pagination", {})
+
+            # Pagination controls
+            with col3:
+                page_col1, page_col2, page_col3 = st.columns([1, 2, 1])
+                with page_col1:
+                    if pagination.get("has_previous") and st.button("← Prev"):
+                        st.session_state.current_page -= 1
+                        st.rerun()
+                with page_col2:
+                    st.markdown(
+                        f"**Page {pagination.get('current_page', 1)}/{pagination.get('total_pages', 1)}**"
+                    )
+                with page_col3:
+                    if pagination.get("has_next") and st.button("Next →"):
+                        st.session_state.current_page += 1
+                        st.rerun()
+
+            # Check if any documents across all jobs are still processing
+            any_processing = any(
+                not doc.get("chunk_ids")
+                for job in document_list
+                for doc in job["documents"]
+            )
 
             # Display documents grouped by job_id
-            for job_id, documents in jobs.items():
-                # Check if any document in this job is still processing (no chunk_ids)
+            for job_group in document_list:
+                job_id = job_group["job_id"]
+                documents = job_group["documents"]
+
+                # Check if any document in this job is still processing
                 has_processing = any(not doc.get("chunk_ids") for doc in documents)
 
-                st.subheader(f"Job: {job_id}")
+                st.markdown(f"##### Job: {job_id}")
 
                 # Display cancel button for the entire job if any documents are processing
                 if has_processing and st.button(
                     "Cancel Job", key=f"cancel_job_{job_id}"
                 ):
-                    # Prepare arguments for cancellation - all processing documents in this job
+                    # Prepare arguments for cancellation
                     args = {
                         "documents": [
                             {
-                                "job_id": doc["job_id"],
+                                "job_id": job_id,
                                 "filename": doc["filename"],
                             }
                             for doc in documents
@@ -197,16 +240,19 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         agent_id, module_root, "cancel_documents", args
                     )
                     if cancel_result:
+                        st.session_state.current_page = (
+                            1  # Reset to first page after cancellation
+                        )
                         st.rerun()
                         st.success(f"Job {job_id} cancelled successfully.")
                     else:
                         st.error(f"Failed to cancel job {job_id}.")
 
                 # Display each document in the job
-                for index, document in enumerate(documents, start=1):
+                for document in documents:
                     col1, col2, col3, col4 = st.columns([4, 4, 2, 1])
                     with col1:
-                        # Display document name as a hyperlink if file_path has a value
+                        # Display document name as a hyperlink if file_path exists
                         if document.get("file_path"):
                             st.markdown(
                                 f"[{document['filename']}]({document['file_path']})",
@@ -217,25 +263,28 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     with col2:
                         # Display metadata if available
                         metadata = document.get("metadata", {})
-                        if metadata:
+                        if metadata and st.toggle(
+                            "Metadata",
+                            key=f"metadata_{job_id}_{document['filename']}",
+                            value=False,
+                        ):
                             st.json(metadata)
-                        else:
-                            st.text("No Metadata")
+
                     with col3:
                         # Display file type
                         st.text(document["file_type"])
                     with col4:
-                        # Show "Delete" button if chunk_ids is not empty, otherwise show "Processing"
+                        # Show "Delete" button if processed, otherwise "Processing"
                         if document.get("chunk_ids"):
                             if st.button(
                                 "Delete",
-                                key=f"delete_{index}_{document['job_id']}_{document['filename']}",
+                                key=f"delete_{job_id}_{document['filename']}",
                             ):
                                 # Prepare arguments for deletion
                                 args = {
                                     "documents": [
                                         {
-                                            "job_id": document["job_id"],
+                                            "job_id": job_id,
                                             "filename": document["filename"],
                                         }
                                     ]
