@@ -14,3 +14,9 @@
 
 ## 0.0.5
 - Catered for spaces in document filenames which affect the rendering of URLs
+
+## 0.0.6
+- Updated doc list to group docs by job and auto-refresh upon completion of job
+
+## 0.0.7
+- Added document URL support
