@@ -28,7 +28,7 @@ walker delete_job :interact_graph_walker: {
     can on_action with Action entry {
         # call the remove/delete method on the action
 
-        # remove the document 
+        # remove the document
         self.response = here.delete_doc_job(self.job_id);
 
         if not self.response {
@@ -36,7 +36,7 @@ walker delete_job :interact_graph_walker: {
             Jac.get_context().error = "Failed to delete the job.";
             self.response = False;
         }
-    
+
     }
 
 }
