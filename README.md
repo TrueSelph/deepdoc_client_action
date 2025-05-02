@@ -76,7 +76,6 @@ This walker processes documents and ingests them into the vector store.
   "walker": "add_documents",
   "args": {
     "urls": ["http://example.com/document.pdf"],
-    "files": [],
     "metadatas": [{"author": "John Doe"}],
     "from_page": 0,
     "to_page": 100000,
@@ -94,7 +93,13 @@ This walker processes documents and ingests them into the vector store.
 
 #### 2. List Documents
 
-This walker lists all documents processed by the deepdoc service.
+This walker lists all or paged documents processed by the deepdoc service.
+
+#### Arguments for `list_documents`
+
+- `page` (int, default: 1): The page number to retrieve in a paginated response.
+- `per_page` (int, default: 10): The number of documents to retrieve per page.
+- `all` (bool, default: False): A flag to indicate whether to return all documents. If set to `True`, pagination parameters (`page` and `per_page`) are ignored.
 
 **Payload Example:**
 
@@ -103,7 +108,10 @@ This walker lists all documents processed by the deepdoc service.
   "agent_id": "12345",
   "module_root": "actions.jivas.deepdoc_client_action",
   "walker": "list_documents",
-  "args": {}
+  "args": {
+    "page": 1,
+    "per_page": 10,
+  }
 }
 ```
 
@@ -125,6 +133,23 @@ This walker removes documents from the vector store and deletes local file syste
         "filename": "document1.pdf"
       }
     ]
+  }
+}
+```
+
+#### 4. Delete Job
+
+This walker removes documents by job ID from the vector store and deletes local file system entries.
+
+**Payload Example:**
+
+```json
+{
+  "agent_id": "12345",
+  "module_root": "actions.jivas.deepdoc_client_action",
+  "walker": "delete_job",
+  "args": {
+    "job_id": "67890",
   }
 }
 ```
