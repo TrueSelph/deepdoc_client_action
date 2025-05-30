@@ -22,3 +22,6 @@
 - Added document URL support
 - Added pagination for document list by job
 - Modified list_documents to respond t an 'all' flag which returns all docs
+
+## 0.0.7
+- Refactored to store doc_manifest in memory collection

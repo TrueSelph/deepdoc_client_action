@@ -6,6 +6,7 @@ import:py from logging { Logger }
 import:jac from jivas.agent.action.action { Action }
 import:py from jvserve.lib.agent_interface { AgentInterface }
 import:py from jvserve.lib.file_interface { file_interface }
+import:jac from jivas.agent.memory.collection { Collection }
 
 
 node DeepDocClientAction :Action: {
@@ -19,7 +20,6 @@ node DeepDocClientAction :Action: {
     has api_key:str = os.environ.get('DEEPDOC_API_KEY','api-key');
     has base_url:str = os.environ.get('JIVAS_BASE_URL', '');
     has vector_store_action:str = "TypesenseVectorStoreAction";
-    has doc_manifest:dict = {};
     has cancelled_jobs:list = [];
 
     can healthcheck() {
@@ -377,13 +377,28 @@ node DeepDocClientAction :Action: {
 
     can get_doc_manifest() -> dict {
         # Returns the document manifest containing file details for each job ID.
-        return self.doc_manifest;
+        collection = self.get_collection();
+
+        if not collection.get_data_item('doc_manifest') {
+            collection.set_data_item('doc_manifest', {});
+            return collection.get_data_item('doc_manifest');
+        }
+
+        return collection.get_data_item('doc_manifest');
+    }
+
+    can update_doc_manifest(data:dict) {
+        collection = self.get_collection();
+        collection.set_data_item('doc_manifest', data);
     }
 
     can get_doc_entries() -> list[dict] {
         # Returns a flat list of all document entries.
         entries = [];
-        for (job_id, docs) in self.doc_manifest.items() {
+
+        doc_manifest = self.get_doc_manifest();
+
+        for (job_id, docs) in doc_manifest.items() {
             for doc in docs {
                 entries.append({
                     "job_id": job_id,
@@ -402,9 +417,10 @@ node DeepDocClientAction :Action: {
         # Returns the document manifest entry by filename for a specific job ID.
 
         # if we are only searching by filename, we need to search all job_ids
+        doc_manifest = self.get_doc_manifest();
 
         if filename and job_id == "" {
-            for (job_id, docs) in self.doc_manifest.items() {
+            for (job_id, docs) in doc_manifest.items() {
                 for doc in docs {
                     if doc["filename"] == filename {
                         return doc;
@@ -414,9 +430,9 @@ node DeepDocClientAction :Action: {
             return {};
         }
 
-        if job_id in self.doc_manifest.keys() {
+        if job_id in doc_manifest.keys() {
             # Find the entry for the specified filename
-            for item in self.doc_manifest[job_id] {
+            for item in doc_manifest[job_id] {
                 if item["filename"] == filename {
                     return item;
                 }
@@ -447,13 +463,14 @@ node DeepDocClientAction :Action: {
                 srv_source = "";
             }
 
+            doc_manifest = self.get_doc_manifest();
             # Initialize the doc_manifest entry for the job_id if it does not exist
-            if job_id not in self.doc_manifest.keys() {
-                self.doc_manifest[job_id] = [];
+            if job_id not in doc_manifest.keys() {
+                doc_manifest[job_id] = [];
             }
 
             # Check for duplicates
-            for entry in self.doc_manifest[job_id] {
+            for entry in doc_manifest[job_id] {
                 if entry["filename"] == file.get("name") {
                     self.logger.error(f"Duplicate entry for file '{file.get("name")}' in job ID '{job_id}'.");
                     return False;
@@ -461,7 +478,7 @@ node DeepDocClientAction :Action: {
             }
 
             # Append the file details to the doc_manifest entry if no duplicate is found
-            self.doc_manifest[job_id].append({
+            doc_manifest[job_id].append({
                 "file_path": srv_source,
                 "filename": file.get("name"),
                 "file_type": file.get("type"),
@@ -469,18 +486,20 @@ node DeepDocClientAction :Action: {
                 "chunk_ids": file.get("chunk_ids", [])
             });
 
+            self.update_doc_manifest(doc_manifest);
+
             return True;
 
         }
 
         if url {
             # Initialize the doc_manifest entry for the job_id if it does not exist
-            if job_id not in self.doc_manifest.keys() {
-                self.doc_manifest[job_id] = [];
+            if job_id not in doc_manifest.keys() {
+                doc_manifest[job_id] = [];
             }
 
             # Check for duplicates
-            for entry in self.doc_manifest[job_id] {
+            for entry in doc_manifest[job_id] {
                 if entry["filename"] == url.get("name") {
                     self.logger.error(f"Duplicate entry for file '{url.get("name")}' in job ID '{job_id}'.");
                     return False;
@@ -488,7 +507,7 @@ node DeepDocClientAction :Action: {
             }
 
             # Append the URL details to the doc_manifest entry if no duplicate is found
-            self.doc_manifest[job_id].append({
+            doc_manifest[job_id].append({
                 "file_path": url.get("source"),
                 "filename": url.get("name"),
                 "file_type": url.get("type"),
@@ -496,16 +515,19 @@ node DeepDocClientAction :Action: {
                 "chunk_ids": url.get("chunk_ids", [])
             });
 
+            self.update_doc_manifest(doc_manifest);
+
             return True;
         }
     }
 
     can update_doc_entry(job_id:str, filename:str, doc:dict) -> bool {
         # Updates an existing entry in the document manifest for a specific job ID.
+        doc_manifest = self.get_doc_manifest();
 
-        if job_id in self.doc_manifest.keys() {
+        if job_id in doc_manifest.keys() {
             # Find the entry for the specified filename
-            for item in self.doc_manifest[job_id] {
+            for item in doc_manifest[job_id] {
                 if item["filename"] == filename {
                     # Update the entry with new file details
                     if "file_path" in doc {
@@ -513,7 +535,7 @@ node DeepDocClientAction :Action: {
                         item["file_path"] = doc["file_path"];
                     }
                     item["metadata"] = doc.get("metadata", {});
-
+                    self.update_doc_manifest(doc_manifest);
                     return True;
                 }
             }
@@ -528,13 +550,15 @@ node DeepDocClientAction :Action: {
     can insert_doc_chunk_id(chunk_id:str, job_id:str, filename:str) -> bool {
         # Adds a document chunk ID generated from being ingested into the vector store
         # to the manifest entry for a specific file.
+        doc_manifest = self.get_doc_manifest();
 
-        if job_id in self.doc_manifest.keys() {
+        if job_id in doc_manifest.keys() {
             # Find the entry for the specified filename
-            for item in self.doc_manifest[job_id] {
+            for item in doc_manifest[job_id] {
                 if item["filename"] == filename {
                     # Update the entry with the new chunk ID
                     item["chunk_ids"].append(chunk_id);
+                    self.update_doc_manifest(doc_manifest);
                     return True;
                 }
             }
@@ -551,8 +575,9 @@ node DeepDocClientAction :Action: {
         # set manifesrt_only to True to delete the entry from the manifest only and not the file system
 
         doc = self.get_doc_entry(job_id=job_id, filename=filename);
+        doc_manifest = self.get_doc_manifest();
 
-        if job_id not in self.doc_manifest.keys() {
+        if job_id not in doc_manifest.keys() {
             self.logger.error(f"Job ID {job_id} not found in doc manifest.");
             return False;
         }
@@ -564,11 +589,11 @@ node DeepDocClientAction :Action: {
 
         # Filter out the entry with the specified file name
         updated_entries = [
-            entry for entry in self.doc_manifest[job_id] if entry["filename"] != filename
+            entry for entry in doc_manifest[job_id] if entry["filename"] != filename
         ];
 
         # check if the file exists in the manifest...
-        if len(updated_entries) < len(self.doc_manifest[job_id]) {
+        if len(updated_entries) < len(doc_manifest[job_id]) {
             if doc['file_type'] != "url" {
                 # Attempt to delete the file from the filesystem if not url
                 try {
@@ -584,15 +609,16 @@ node DeepDocClientAction :Action: {
 
         if updated_entries {
             # update the doc_manifest with the remaining entries
-            self.doc_manifest[job_id] = updated_entries;
+            doc_manifest[job_id] = updated_entries;
         } else {
             # if no entries remain for the job_id, remove the job_id from the manifest
             self.cancelled_jobs.append(job_id);
-            del self.doc_manifest[job_id];
+            del doc_manifest[job_id];
         }
 
         # update the agent descriptor with changes
         self.get_agent().update();
+        self.update_doc_manifest(doc_manifest);
 
         return True;
 
@@ -600,16 +626,19 @@ node DeepDocClientAction :Action: {
 
     can delete_doc_job(job_id:str) -> bool {
         # Deletes all entries for a specific job ID from the document manifest and everywhere else.
+        doc_manifest = self.get_doc_manifest();
 
-        if job_id not in self.doc_manifest.keys() {
+        if job_id not in doc_manifest.keys() {
             self.logger.error(f"Job ID {job_id} not found in doc manifest.");
             return False;
         }
 
         # Attempt to delete all files associated with the job ID
-        for entry in self.doc_manifest[job_id] {
+        for entry in doc_manifest[job_id] {
             self.delete_doc_entry(job_id=job_id, filename=entry["filename"]);
         }
+
+        self.update_doc_manifest(doc_manifest);
 
         return True;
     }

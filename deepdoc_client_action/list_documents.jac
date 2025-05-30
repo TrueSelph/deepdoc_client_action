@@ -33,7 +33,8 @@ walker list_documents :interact_graph_walker: {
         if self.all {
             self.response = here.get_doc_entries();  # fetch all documents
         } else {
-            paginator = JobPaginator(here.doc_manifest);
+            doc_manifest = here.get_doc_manifest();
+            paginator = JobPaginator(doc_manifest);
             self.response = paginator.get_page(page=self.page, per_page=self.per_page);  # fetch paged documents
         }
     }
