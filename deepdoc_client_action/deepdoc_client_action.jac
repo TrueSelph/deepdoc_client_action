@@ -192,7 +192,7 @@ node DeepDocClientAction :Action: {
                     for (index, url) in enumerate(urls) {
                         metadata = metadatas[index] if metadatas and index < len(metadatas) else {};
 
-                        job_entry.add_url_file_entry(
+                        job_entry.add_doc_url_entry(
                             url = url,
                             metadata = metadata
                         );
