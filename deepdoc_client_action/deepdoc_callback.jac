@@ -58,6 +58,7 @@ walker deepdoc_callback :interact_graph_walker: {
                     self.response = here.ingest_deepdoc_job(job_id=job_id, job_data=job_data);
                 } except Exception as e {
                     self.logger.error(f"Error during ingestion: {str(e)}");
+                    self.logger.error(traceback.format_exc());
                     self.response = False;
                 }
             } else {

@@ -5,7 +5,6 @@ import:jac from jivas.agent.core.agent { Agent }
 import:jac from jivas.agent.action.action { Action }
 import:jac from jivas.agent.action.actions { Actions }
 import:jac from jivas.agent.action.interact_graph_walker { interact_graph_walker }
-import:py from .modules.job_paginator { JobPaginator }
 
 
 walker list_documents :interact_graph_walker: {
@@ -31,11 +30,9 @@ walker list_documents :interact_graph_walker: {
         # get the list of documents from the manifest
 
         if self.all {
-            self.response = here.get_doc_entries();  # fetch all documents
+            self.response = here.list_doc_entries(page=self.page, limit=0);  # fetch all documents
         } else {
-            doc_manifest = here.get_doc_manifest();
-            paginator = JobPaginator(doc_manifest);
-            self.response = paginator.get_page(page=self.page, per_page=self.per_page);  # fetch paged documents
+            self.response = here.list_doc_entries(page=self.page, limit=self.per_page);  # fetch paged documents
         }
     }
 }
