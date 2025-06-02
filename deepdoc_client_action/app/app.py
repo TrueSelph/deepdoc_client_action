@@ -1,6 +1,8 @@
 """This module contains the Streamlit app for the Typesense Vector Store Action"""
 
 import time
+from datetime import datetime
+from typing import Dict
 
 import streamlit as st
 from jvcli.client.lib.utils import call_action_walker_exec
@@ -152,6 +154,64 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     "Failed to process documents. Please check your inputs and try again."
                 )
 
+    def format_datetime(dt_str: str) -> str:
+        """Format datetime string to short date and time format
+
+        Args:
+            dt_str: The datetime string to format
+
+        Returns:
+            Formatted datetime string or empty string if input is empty
+        """
+        if not dt_str:
+            return ""
+        dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    def calculate_processing_time(created_str: str, completed_str: str) -> str:
+        """Calculate processing time between created and completed datetimes
+
+        Args:
+            created_str: The creation datetime string
+            completed_str: The completion datetime string
+
+        Returns:
+            Formatted processing time as HH:MM:SS or empty string if inputs are invalid
+        """
+        if not created_str or not completed_str:
+            return ""
+
+        created = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+        completed = datetime.fromisoformat(completed_str.replace("Z", "+00:00"))
+        delta = completed - created
+
+        # Format as HH:MM:SS
+        total_seconds = int(delta.total_seconds())
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+    def get_status_badge(status: str) -> str:
+        """Return a colored badge for the status
+
+        Args:
+            status: The status string to display
+
+        Returns:
+            HTML span element with colored badge styling
+        """
+        status = str(status).upper()
+        color_map: Dict[str, str] = {
+            "COMPLETED": "green",
+            "PROCESSING": "orange",
+            "INGESTING": "orange",
+            "PENDING": "gray",
+            "FAILED": "red",
+            "CANCELLED": "yellow",
+        }
+        color = color_map.get(status, "gray")
+        return f"<span style='background-color: {color}; color: white; padding: 2px 6px; border-radius: 4px;'>{status}</span>"
+
     with st.expander("Document List", True):
         # Initialize session state variables for pagination
         if "current_page" not in st.session_state:
@@ -192,7 +252,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             document_list = result["items"]
 
             # Group documents by job_id
-            jobs: dict = {}
+            jobs: Dict[str, list] = {}
             for item in document_list:
                 job_id = item["job_id"]
                 if job_id not in jobs:
@@ -217,7 +277,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
             # Check if any document is still processing or ingesting
             any_processing = any(
-                item.get("status") in ("ItemStatus.PROCESSING", "ItemStatus.INGESTING")
+                item.get("status") in ("PROCESSING", "INGESTING")
                 for item in document_list
             )
 
@@ -225,8 +285,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             for job_id, documents in jobs.items():
                 # Check if any document in this job is still processing
                 job_processing = any(
-                    doc.get("status")
-                    in ("ItemStatus.PROCESSING", "ItemStatus.INGESTING")
+                    doc.get("status") in ("PROCESSING", "INGESTING")
                     for doc in documents
                 )
 
@@ -234,13 +293,22 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
                 # Display job status and dates
                 first_doc = documents[0]
-                col1, col2, col3 = st.columns([4, 3, 3])
+                status = first_doc.get("status", "").upper()
+
+                col1, col2, col3 = st.columns([2, 3, 3])
                 with col1:
-                    st.text(f"Status: {first_doc.get('status', '')}")
+                    st.markdown(get_status_badge(status), unsafe_allow_html=True)
                 with col2:
-                    st.text(f"Created: {first_doc.get('created_on', '')}")
+                    st.text(
+                        f"Created: {format_datetime(first_doc.get('created_on', ''))}"
+                    )
                 with col3:
-                    st.text(f"Completed: {first_doc.get('completed_on', '')}")
+                    if status == "COMPLETED":
+                        st.text(
+                            f"Completed: {format_datetime(first_doc.get('completed_on', ''))}"
+                        )
+                    else:
+                        st.text("")  # Empty space for alignment
 
                 # Handle Cancel Job confirmation flow
                 if job_processing:
@@ -333,7 +401,16 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
                 # Display each document in the job
                 for document in documents:
-                    col1, col2, col3, col4 = st.columns([4, 4, 2, 1])
+                    doc_status = document.get("status", "").upper()
+                    processing_time = (
+                        calculate_processing_time(
+                            document.get("created_on"), document.get("completed_on")
+                        )
+                        if doc_status == "COMPLETED"
+                        else ""
+                    )
+
+                    col1, col2, col3, col4, col5 = st.columns([3, 3, 2, 2, 1])
                     with col1:
                         # Display document name as a hyperlink if source exists
                         if document.get("source"):
@@ -352,11 +429,14 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                             value=False,
                         ):
                             st.json(metadata)
-
                     with col3:
                         # Display file type
                         st.text(document.get("mimetype", ""))
                     with col4:
+                        # Display processing time if completed
+                        if doc_status == "COMPLETED":
+                            st.text(f"Processed in: {processing_time}")
+                    with col5:
                         # Show "Delete" button if processed, otherwise "Processing"
                         if document.get("chunk_ids"):
                             if (

@@ -26,7 +26,35 @@ node DeepDocClientAction :Action: {
     has base_url:str = os.environ.get('JIVAS_BASE_URL', '');
     has vector_store_action:str = "TypesenseVectorStoreAction";
     has doc_manifest:dict = {}; # maintained for migrations
-    has cancelled_jobs:list = [];
+
+    # {
+    # "e3375fee-91fa-4056-b4d8-e72d3c97c315": [
+    #     {
+    #     "file_path": "http://127.0.0.1:9000/files/ddc/e3375fee-91fa-4056-b4d8-e72d3c97c315_state_of_the_union_copy.txt",
+    #     "filename": "state_of_the_union copy.txt",
+    #     "file_type": "text/plain",
+    #     "metadata": {
+    #         "source": "http://127.0.0.1:9000/files/ddc/e3375fee-91fa-4056-b4d8-e72d3c97c315_state_of_the_union_copy.txt",
+    #         "page": "1",
+    #         "filename": "state_of_the_union copy.txt",
+    #         "job_id": "e3375fee-91fa-4056-b4d8-e72d3c97c315"
+    #     },
+    #     "chunk_ids": [
+    #         "doc_427ee19232a6b09f",
+    #         "doc_6f6976ba8ddc8678"
+    #     ]
+    #     }
+    # ]
+    # }
+    can on_register() -> None {
+        # """
+        # Registers the DeepDocClientAction with the agent's action collection.
+        # executes any migration on older deepdoc manifest entries.
+        # """
+
+        # Check if the doc_manifest dictionary is not empty, indicating a migration is needed
+        self.migrate_manifest();
+    }
 
     can healthcheck() {
         # """
@@ -172,11 +200,10 @@ node DeepDocClientAction :Action: {
 
                         # ensure the output filename is without whitespaces and slashes
                         output_filename = f"{job_id}_{self.format_filename(name)}";
-                        output_file_path = f"ddc/{output_filename}";
                         # save document to the file system
-                        self.get_agent().save_file(output_file_path, file_content);
-                        # retrieve file url
-                        source = self.get_agent().get_file_url(f"ddc/{output_filename}");
+                        self.save_file(output_filename, file_content);
+                        # retrieve short file url
+                        source = self.get_short_file_url(f"{output_filename}");
 
                         job_entry.add_doc_file_entry(
                           name = name,
@@ -282,7 +309,7 @@ node DeepDocClientAction :Action: {
         }
 
         # Get the vector store action and ingest the texts
-        vector_store_action = self.get_agent().get_actions().get(action_label=self.vector_store_action);
+        vector_store_action = self.get_agent().get_action(action_label=self.vector_store_action);
         if not vector_store_action {
             self.logger.error(f"Vector store action '{self.vector_store_action}' not found.");
             job_entry = self.get_job(job_id=job_id);
@@ -355,8 +382,8 @@ node DeepDocClientAction :Action: {
                     filtered_metadata["source"] = doc_entry.get_source();
                 } else {
                     # compose the path to file and update source
-                    srv_filename = f"ddc/{job_id}_{self.format_filename(filtered_metadata['filename'])}";
-                    srv_source = self.get_agent().get_file_url(srv_filename);
+                    srv_filename = f"{job_id}_{self.format_filename(filtered_metadata['filename'])}";
+                    srv_source = self.get_file_url(srv_filename);
                     if srv_source {
                         filtered_metadata["source"] = srv_source;
                     } else {
@@ -485,7 +512,7 @@ node DeepDocClientAction :Action: {
         if not isinstance(doc_entry, DocURLEntry) {
             # Attempt to delete the file from the filesystem if not url
             try {
-                self.get_agent().delete_file(f"ddc/{job_id}_{self.format_filename(doc_entry.name)}");
+                self.delete_file(f"{job_id}_{self.format_filename(doc_entry.name)}");
             } except Exception as e {
                 self.logger.error(f"Failed to delete file from filesystem: {str(e)}");
             }
@@ -535,7 +562,7 @@ node DeepDocClientAction :Action: {
         }
 
         # Retrieve the vector store action
-        vector_store_action = self.get_agent().get_actions().get(action_label=self.vector_store_action);
+        vector_store_action = self.get_agent().get_action(action_label=self.vector_store_action);
         if not vector_store_action {
             self.logger.error(f"Vector store action '{self.vector_store_action}' not found.");
             return False;
@@ -586,6 +613,131 @@ node DeepDocClientAction :Action: {
         return formatted_filename;
     }
 
+    can migrate_manifest() -> None {
+        # """
+        # Migrates the old manifest entries to the new format.
+        # This is a placeholder for future migration logic.
+        # """
+        if self.doc_manifest {
+
+            self.logger.info("Migrating old DeepDoc manifest entries to new format.");
+
+            collection = self.get_collection();
+            vector_store_action = self.get_agent().get_action(action_label=self.vector_store_action);
+            jobs_to_remove = [];
+
+            if not vector_store_action {
+                self.logger.error(f"Vector store action '{self.vector_store_action}' not found. Unable to continue migration.");
+                return False;
+            }
+
+            # Iterate over each job_id and its associated entries in the old manifest
+            for (job_id, entries) in self.doc_manifest.items() {
+
+                job_entry = JobEntry(job_id=job_id);
+
+                collection ++> job_entry;
+                all_entries_processed = True;
+
+                # Iterate over each entry (document/file/url) in the job
+                for entry in entries {
+                    # Check if the entry has the required fields
+                    if "file_path" in entry and "filename" in entry and "file_type" in entry {
+                        # If the entry is a URL type
+                        if entry["file_type"] == "url" {
+                            # Create a DocURLEntry node for the URL
+                            doc_url_entry = DocURLEntry(
+                            job_id=job_id,
+                            name=entry["filename"],
+                            source=entry["file_path"],
+                            metadata=entry.get("metadata", {}),
+                            chunk_ids=entry.get("chunk_ids", [])
+                            );
+                            doc_url_entry.set_status(ItemStatus.COMPLETED);
+                            # Attach the DocURLEntry node to the job_entry
+                            job_entry ++> doc_url_entry;
+                            self.logger.info(f"URL {entry['filename']} successfully migrated.");
+                        } else {
+                            # Otherwise, treat as a file (not a URL)
+                            try {
+                                # If the file_path is a remote URL, download it
+                                if entry["file_path"].startswith("http://") or entry["file_path"].startswith("https://") {
+
+                                    output_filename = f"{job_id}_{self.format_filename(entry['filename'])}";
+                                    # Download the file content
+                                    response = requests.get(entry["file_path"]);
+                                    # If download is successful
+                                    if response.status_code == 200 {
+                                        # Save the file to local storage
+                                        self.save_file(output_filename, response.content);
+                                        # Get the local file URL/path
+                                        updated_source = self.get_short_file_url(output_filename);
+                                        metadata = entry.get("metadata", {});
+                                        chunk_ids = entry.get("chunk_ids", []);
+                                        # update source in metadata if it exists
+                                        if "source" in metadata {
+                                            metadata["source"] = updated_source;
+                                        }
+                                        # Create a DocFileEntry node for the file
+                                        doc_file_entry = DocFileEntry(
+                                            job_id=job_id,
+                                            name=entry["filename"],
+                                            source=updated_source,
+                                            mimetype=entry["file_type"],
+                                            metadata=metadata,
+                                            chunk_ids=chunk_ids
+                                        );
+
+                                        # Attach the DocFileEntry node to the job_entry
+                                        job_entry ++> doc_file_entry;
+
+                                        # update the vector store metadata with the new source
+                                        for chunk_id in chunk_ids {
+                                            # update the vector store entry with the new source
+                                            vector_store_action.update_document(
+                                                id=chunk_id,
+                                                data={'metadata': metadata}
+                                            );
+                                            self.logger.info(f"Metadata for {chunk_id} successfully updated.");
+                                        }
+                                        doc_file_entry.set_status(ItemStatus.COMPLETED);
+                                        self.logger.info(f"File {entry['filename']} successfully migrated.");
+
+                                        # delete the old file entry from the manifest, with recreated old filename
+                                        output_file_path = f"ddc/{output_filename}";
+                                        file_interface.delete_file(output_file_path);
+                                    } else {
+                                        # Log an error if the file could not be downloaded
+                                        self.logger.error(f"Failed to download file from {entry['file_path']}: {response.status_code}");
+                                        all_entries_processed = False;
+                                    }
+                                }
+                            } except Exception as e {
+                                # Log any exceptions that occur during file download or processing
+                                self.logger.error(f"Error copying file from {entry['file_path']}: {str(e)}");
+                                self.logger.error(traceback.format_exc());
+                                all_entries_processed = False;
+                            }
+                        }
+                    } else {
+                        # Log an error if the entry format is invalid
+                        self.logger.error(f"Invalid entry format: {entry}");
+                        all_entries_processed = False;
+                    }
+                }
+                # If all entries for this job were processed, mark the job for removal from the old manifest
+                if all_entries_processed {
+                    jobs_to_remove.append(job_id);
+                    job_entry.set_status(ItemStatus.COMPLETED);
+                }
+
+            }
+            # Remove all jobs that were successfully migrated from the old doc_manifest
+            for job_id in jobs_to_remove {
+                del self.doc_manifest[job_id];
+            }
+        }
+    }
 
 }
 
@@ -607,6 +759,7 @@ walker _get_job_entry {
     can on_job_entry with JobEntry entry {
         self.job_entry = here;
     }
+
 }
 
 walker _list_doc_entries {
