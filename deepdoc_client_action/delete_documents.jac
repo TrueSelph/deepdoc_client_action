@@ -50,7 +50,7 @@ walker delete_documents :interact_graph_walker: {
             # remove the document
             if not here.delete_doc_entry(
                 doc.get("job_id", ""),
-                doc.get("filename", "")
+                doc.get("doc_id", "")
             ) {
                 success = False;
                 break;

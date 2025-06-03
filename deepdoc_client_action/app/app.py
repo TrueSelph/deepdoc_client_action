@@ -1,6 +1,8 @@
 """This module contains the Streamlit app for the Typesense Vector Store Action"""
 
 import time
+from datetime import datetime
+from typing import Dict
 
 import streamlit as st
 from jvcli.client.lib.utils import call_action_walker_exec
@@ -152,6 +154,64 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     "Failed to process documents. Please check your inputs and try again."
                 )
 
+    def format_datetime(dt_str: str) -> str:
+        """Format datetime string to short date and time format
+
+        Args:
+            dt_str: The datetime string to format
+
+        Returns:
+            Formatted datetime string or empty string if input is empty
+        """
+        if not dt_str:
+            return ""
+        dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    def calculate_processing_time(created_str: str, completed_str: str) -> str:
+        """Calculate processing time between created and completed datetimes
+
+        Args:
+            created_str: The creation datetime string
+            completed_str: The completion datetime string
+
+        Returns:
+            Formatted processing time as HH:MM:SS or empty string if inputs are invalid
+        """
+        if not created_str or not completed_str:
+            return ""
+
+        created = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+        completed = datetime.fromisoformat(completed_str.replace("Z", "+00:00"))
+        delta = completed - created
+
+        # Format as HH:MM:SS
+        total_seconds = int(delta.total_seconds())
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+    def get_status_badge(status: str) -> str:
+        """Return a colored badge for the status
+
+        Args:
+            status: The status string to display
+
+        Returns:
+            HTML span element with colored badge styling
+        """
+        status = str(status).upper()
+        color_map: Dict[str, str] = {
+            "COMPLETED": "green",
+            "PROCESSING": "orange",
+            "INGESTING": "orange",
+            "PENDING": "blue",
+            "FAILED": "red",
+            "CANCELLED": "gray",
+        }
+        color = color_map.get(status, "gray")
+        return f"<span style='background-color: {color}; color: white; padding: 2px 6px; border-radius: 4px;'>{status}</span>"
+
     with st.expander("Document List", True):
         # Initialize session state variables for pagination
         if "current_page" not in st.session_state:
@@ -186,49 +246,72 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             "page": st.session_state.current_page,
             "per_page": st.session_state.per_page,
         }
-        document_response = call_action_walker_exec(
-            agent_id, module_root, "list_documents", args
-        )
+        result = call_action_walker_exec(agent_id, module_root, "list_documents", args)
 
-        if document_response and "items" in document_response:
-            document_list = document_response["items"]
-            pagination = document_response.get("pagination", {})
+        if result and "items" in result:
+            document_list = result["items"]
+
+            # Group documents by job_id
+            jobs: Dict[str, list] = {}
+            for item in document_list:
+                job_id = item["job_id"]
+                if job_id not in jobs:
+                    jobs[job_id] = []
+                jobs[job_id].append(item)
 
             # Pagination controls
             with col3:
                 page_col1, page_col2, page_col3 = st.columns([1, 2, 1])
                 with page_col1:
-                    if pagination.get("has_previous") and st.button("← Prev"):
+                    if result.get("has_previous", False) and st.button("← Prev"):
                         st.session_state.current_page -= 1
                         st.rerun()
                 with page_col2:
                     st.markdown(
-                        f"**Page {pagination.get('current_page', 1)}/{pagination.get('total_pages', 1)}**"
+                        f"**Page {result.get('page', 1)}/{result.get('total_pages', 1)}**"
                     )
                 with page_col3:
-                    if pagination.get("has_next") and st.button("Next →"):
+                    if result.get("has_next", False) and st.button("Next →"):
                         st.session_state.current_page += 1
                         st.rerun()
 
-            # Check if any documents across all jobs are still processing
+            # Check if any document is still processing or ingesting
             any_processing = any(
-                not doc.get("chunk_ids")
-                for job in document_list
-                for doc in job["documents"]
+                item.get("status") in ("PROCESSING", "INGESTING")
+                for item in document_list
             )
 
             # Display documents grouped by job_id
-            for job_group in document_list:
-                job_id = job_group["job_id"]
-                documents = job_group["documents"]
-
+            for job_id, documents in jobs.items():
                 # Check if any document in this job is still processing
-                has_processing = any(not doc.get("chunk_ids") for doc in documents)
+                job_processing = any(
+                    doc.get("status") in ("PROCESSING", "INGESTING")
+                    for doc in documents
+                )
 
                 st.markdown(f"##### Job: {job_id}")
 
+                # Display job status and dates
+                first_doc = documents[0]
+                status = first_doc.get("status", "").upper()
+
+                col1, col2, col3 = st.columns([2, 3, 3])
+                with col1:
+                    st.markdown(get_status_badge(status), unsafe_allow_html=True)
+                with col2:
+                    st.text(
+                        f"Created: {format_datetime(first_doc.get('created_on', ''))}"
+                    )
+                with col3:
+                    if status in ("COMPLETED", "CANCELLED"):
+                        st.text(
+                            f"Completed: {format_datetime(first_doc.get('completed_on', ''))}"
+                        )
+                    else:
+                        st.text("")  # Empty space for alignment
+
                 # Handle Cancel Job confirmation flow
-                if has_processing:
+                if job_processing:
                     if (
                         st.session_state.confirm_state["active"]
                         and st.session_state.confirm_state["type"] == "cancel_job"
@@ -242,19 +325,10 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         with col1:
                             if st.button("Yes, Cancel Job"):
                                 # Prepare arguments for cancellation
-                                args = {
-                                    "documents": [
-                                        {
-                                            "job_id": job_id,
-                                            "filename": doc["filename"],
-                                        }
-                                        for doc in documents
-                                        if not doc.get("chunk_ids")
-                                    ]
-                                }
+                                args = {"job_id": job_id}
                                 # Call the cancel_documents walker
                                 cancel_result = call_action_walker_exec(
-                                    agent_id, module_root, "cancel_documents", args
+                                    agent_id, module_root, "cancel_job", args
                                 )
                                 if cancel_result:
                                     st.session_state.current_page = 1
@@ -277,7 +351,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         st.rerun()
 
                 # Handle Delete Job confirmation flow
-                if not has_processing:
+                if not job_processing:
                     if (
                         st.session_state.confirm_state["active"]
                         and st.session_state.confirm_state["type"] == "delete_job"
@@ -318,39 +392,51 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
                 # Display each document in the job
                 for document in documents:
-                    col1, col2, col3, col4 = st.columns([4, 4, 2, 1])
+                    doc_status = document.get("status", "").upper()
+                    processing_time = (
+                        calculate_processing_time(
+                            document.get("created_on"), document.get("completed_on")
+                        )
+                        if doc_status == "COMPLETED"
+                        else ""
+                    )
+
+                    col1, col2, col3, col4, col5 = st.columns([3, 3, 2, 2, 1])
                     with col1:
-                        # Display document name as a hyperlink if file_path exists
-                        if document.get("file_path"):
+                        # Display document name as a hyperlink if source exists
+                        if document.get("source"):
                             st.markdown(
-                                f"[{document['filename']}]({document['file_path']})",
+                                f"[{document['name']}]({document['source']})",
                                 unsafe_allow_html=True,
                             )
                         else:
-                            st.text(document["filename"])
+                            st.text(document["name"])
                     with col2:
                         # Display metadata if available
                         metadata = document.get("metadata", {})
                         if metadata and st.toggle(
                             "Metadata",
-                            key=f"metadata_{job_id}_{document['filename']}",
+                            key=f"metadata_{job_id}_{document['name']}",
                             value=False,
                         ):
                             st.json(metadata)
-
                     with col3:
                         # Display file type
-                        st.text(document["file_type"])
+                        st.text(document.get("mimetype", ""))
                     with col4:
+                        # Display processing time if completed
+                        if doc_status == "COMPLETED" and processing_time != "00:00:00":
+                            st.text(f"Processed in: {processing_time}")
+                    with col5:
                         # Show "Delete" button if processed, otherwise "Processing"
-                        if document.get("chunk_ids"):
+                        if doc_status in ("COMPLETED", "FAILED", "CANCELLED"):
                             if (
                                 st.session_state.confirm_state["active"]
                                 and st.session_state.confirm_state["type"]
                                 == "delete_doc"
                                 and st.session_state.confirm_state["job_id"] == job_id
-                                and st.session_state.confirm_state["filename"]
-                                == document["filename"]
+                                and st.session_state.confirm_state["doc_id"]
+                                == document["id"]
                             ):
                                 st.warning("Are you sure?", icon="⚠️")
                                 col1, col2 = st.columns(2)
@@ -361,7 +447,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                                             "documents": [
                                                 {
                                                     "job_id": job_id,
-                                                    "filename": document["filename"],
+                                                    "doc_id": document["id"],
                                                 }
                                             ]
                                         }
@@ -379,7 +465,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                                             st.rerun()
                                         else:
                                             st.error(
-                                                f"Failed to delete document {document['filename']}."
+                                                f"Failed to delete document {document['name']}."
                                             )
                                             st.session_state.confirm_state = {
                                                 "active": False
@@ -392,13 +478,13 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                                         }
                                         st.rerun()
                             elif st.button(
-                                "Delete", key=f"delete_{job_id}_{document['filename']}"
+                                "Delete", key=f"delete_{job_id}_{document['name']}"
                             ):
                                 st.session_state.confirm_state = {
                                     "active": True,
                                     "type": "delete_doc",
                                     "job_id": job_id,
-                                    "filename": document["filename"],
+                                    "doc_id": document["id"],
                                 }
                                 st.rerun()
                         else:

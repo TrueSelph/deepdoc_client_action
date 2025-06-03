@@ -7,11 +7,11 @@ import:jac from jivas.agent.action.actions { Actions }
 import:jac from jivas.agent.action.interact_graph_walker { interact_graph_walker }
 
 
-walker cancel_documents :interact_graph_walker: {
+walker cancel_job :interact_graph_walker: {
     # action endpoint which cancels document jobs and removes document from the manifest and deletes the local file system entries
 
     # a list of {job_id, filename} pairs for removal
-    has documents:list[dict] = [];
+    has job_id:str = "";
     has response:bool = False;
 
     # set up logger
@@ -31,33 +31,19 @@ walker cancel_documents :interact_graph_walker: {
         success = True;
 
         # check if the documents list is empty
-        if not self.documents {
+        if not self.job_id {
             Jac.get_context().status = 400;
-            Jac.get_context().error = "No documents provided for cancellation.";
+            Jac.get_context().error = "No Job ID provided for cancellation.";
             self.response = False;
             disengage;
         }
 
-        for doc in self.documents {
-            # check if the document is a valid dict
-            if not isinstance(doc, dict) {
-                Jac.get_context().status = 400;
-                Jac.get_context().error = "Invalid document format. Expected a dictionary.";
-                success = False;
-                continue;
-            }
-
-            # remove the document
-            if not here.delete_doc_entry(
-                doc.get("job_id", ""),
-                doc.get("filename", "")
-            ) {
-                success = False;
-                break;
-            }
+        self.response = here.cancel_job(job_id=self.job_id);
+        if not self.response {
+            Jac.get_context().status = 500;
+            Jac.get_context().error = "Failed to cancel the job.";
+            success = False;
         }
-
-        self.response = success;
         # set the response status
         Jac.get_context().status = 200;
     }

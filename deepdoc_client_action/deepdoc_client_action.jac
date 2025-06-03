@@ -6,6 +6,12 @@ import:py from logging { Logger }
 import:jac from jivas.agent.action.action { Action }
 import:py from jvserve.lib.agent_interface { AgentInterface }
 import:py from jvserve.lib.file_interface { file_interface }
+import:jac from jivas.agent.memory.collection { Collection }
+import:jac from actions.jivas.deepdoc_client_action.job_entry { JobEntry }
+import:jac from actions.jivas.deepdoc_client_action.doc_entry { DocEntry }
+import:jac from actions.jivas.deepdoc_client_action.doc_file_entry { DocFileEntry }
+import:jac from actions.jivas.deepdoc_client_action.doc_url_entry { DocURLEntry }
+import:jac from actions.jivas.deepdoc_client_action.item_status { ItemStatus }
 
 
 node DeepDocClientAction :Action: {
@@ -19,8 +25,17 @@ node DeepDocClientAction :Action: {
     has api_key:str = os.environ.get('DEEPDOC_API_KEY','api-key');
     has base_url:str = os.environ.get('JIVAS_BASE_URL', '');
     has vector_store_action:str = "TypesenseVectorStoreAction";
-    has doc_manifest:dict = {};
-    has cancelled_jobs:list = [];
+    has doc_manifest:dict = {}; # maintained for migrations
+
+    can on_register() -> None {
+        # """
+        # Registers the DeepDocClientAction with the agent's action collection.
+        # executes any migration on older deepdoc manifest entries.
+        # """
+
+        # Check if the doc_manifest dictionary is not empty, indicating a migration is needed
+        self.migrate_manifest();
+    }
 
     can healthcheck() {
         # """
@@ -43,7 +58,7 @@ node DeepDocClientAction :Action: {
         }
     }
 
-    can queue_deepdoc_job(
+    can queue_job(
         urls:list[str]=[],
         files:list[dict]=[],
         metadatas:list[dict]=[],
@@ -90,16 +105,12 @@ node DeepDocClientAction :Action: {
             # Prepare the files for the request
             files_data = [];
             for file in files {
+
                 if "name" in file and "type" in file and "content" in file {
 
                     if file["name"] in [f[1][0] for f in files_data] {
                         # ensure we do not have multiple instances of the same file in file_data
                         self.logger.error(f"File {file['name']} already exists in the request. Skipping duplicate.");
-
-                    } elif self.get_doc_entry(job_id="", filename=file["name"]) {
-
-                         # ensure a file with the same name is not already ingested/processed
-                        self.logger.error(f"File {file["name"]} already processed..skipping");
 
                     } else {
                         # Add the file to the files_data list
@@ -148,36 +159,53 @@ node DeepDocClientAction :Action: {
             response_data = response.json();
             if "job_id" in response_data {
 
+                job_id = response_data["job_id"];
+                # grab action collection
+                collection = self.get_collection();
+                # create the job entry node
+                job_entry = JobEntry(
+                    job_id = job_id,
+                    status = ItemStatus.PROCESSING
+                );
+                # attach the job_entry node to collection
+                collection ++> job_entry;
+
                 if(files_data) {
+
                     # if files are in play, we archive the uploaded file(s) as under job_id in the doc_manifest
                     for (index, file_tuple) in enumerate(files_data) {
-                        filename = file_tuple[1][0];
+                        name = file_tuple[1][0];
                         file_content = file_tuple[1][1];
-                        file_type = file_tuple[1][2];
+                        mimetype = file_tuple[1][2];
+                        metadata = metadatas[index] if metadatas and index < len(metadatas) else {};
 
-                        self.add_doc_entry(job_id=response_data["job_id"], file={
-                            "name": filename,
-                            "content": file_content,
-                            "type": file_type,
-                            "metadata": metadatas[index] if metadatas and index < len(metadatas) else {}
-                        });
+                        # ensure the output filename is without whitespaces and slashes
+                        output_filename = f"{job_id}_{self.format_filename(name)}";
+                        # save document to the file system
+                        self.save_file(output_filename, file_content);
+                        # retrieve short file url
+                        source = self.get_short_file_url(f"{output_filename}");
+
+                        job_entry.add_doc_file_entry(
+                          name = name,
+                          source = source,
+                          mimetype = mimetype,
+                          metadata = metadata
+                        );
                     }
                 }
 
                 if urls {
                     # if urls are in play, we archive the uploaded file(s) as under job_id in the doc_manifest
                     for (index, url) in enumerate(urls) {
-                        self.add_doc_entry(job_id=response_data["job_id"], url={
-                            "name": url.split("/")[-1],
-                            "source": url,
-                            "type": "url",
-                            "metadata": metadatas[index] if metadatas and index < len(metadatas) else {}
-                        });
+                        metadata = metadatas[index] if metadatas and index < len(metadatas) else {};
+
+                        job_entry.add_doc_url_entry(
+                            url = url,
+                            metadata = metadata
+                        );
                     }
                 }
-
-                # update the agent descriptor with changes
-                self.get_agent().dump_descriptor();
 
                 return response_data["job_id"];
             } else {
@@ -191,7 +219,7 @@ node DeepDocClientAction :Action: {
         }
     }
 
-    can get_deepdoc_job_status(job_id:str) -> dict {
+    can get_job_status(job_id:str) -> dict {
         # """
         # Retrieves the status of a queued job from the DeepDoc service.
 
@@ -228,7 +256,58 @@ node DeepDocClientAction :Action: {
         }
     }
 
-    can ingest_deepdoc_job(job_id:str, job_data:dict) -> bool {
+    can cancel_job(job_id:str) -> dict {
+        # """
+        # Cancels a deepdoc job which is still in processing
+
+        # Args:
+        #     job_id (str): The ID of the job to cancel.
+
+        # Returns:
+        #     dict: The status and result of the job.
+        # """
+        try {
+            # Make the GET request to the DeepDoc service
+            response = requests.post(f"{self.api_url}/job/{job_id}/cancel");
+
+            # Check if the response is successful
+            if response.status_code != 200 {
+                self.logger.error(f"Failed to cancel job: {response.text}");
+                return {"status": "error", "error": response.text};
+            }
+
+            # now remove the job entry from the collection
+            job_entry = self.get_job_entry(job_id=job_id);
+            if job_entry {
+                # set the job entry status to cancelled
+                job_entry.set_status(ItemStatus.CANCELLED);
+
+                # now remove any document entries associated with the job
+                doc_entries = job_entry.get_doc_entries();
+                if doc_entries {
+                    for doc_entry in doc_entries {
+                        # remove the document entry
+                        # self.delete_doc_entry(job_id=job_id, doc_id=doc_entry.id);
+                        # set the doc entry status to cancelled
+                        doc_entry.set_status(ItemStatus.CANCELLED);
+                    }
+                }
+
+            } else {
+                self.logger.error(f"Job entry with ID {job_id} not found in the collection.");
+            }
+
+            # Parse the response JSON
+            response_data = response.json();
+
+        } except Exception as e {
+            self.logger.error(f"Exception occurred while attempting to cancel the job: {str(e)}");
+            self.logger.error(traceback.format_exc());
+            return {"status": "error", "error": str(e)};
+        }
+    }
+
+    can ingest_job(job_id:str, job_data:dict) -> bool {
         # """
         # Imports the results of a completed job into the vector store using add_texts.
 
@@ -238,35 +317,50 @@ node DeepDocClientAction :Action: {
         # Returns:
         #     bool: True if the import was successful, False otherwise.
         # """
+
+        # Ensure the job status is completed
+        if job_data.get("status") == "error" {
+            self.logger.error(f"Unable to ingest failed job data");
+            job_entry = self.get_job_entry(job_id=job_id);
+            job_entry.set_status(ItemStatus.FAILED);
+            return False;
+        }
+
+        if job_data.get("status") != "completed" {
+            self.logger.error("Unable to ingest incomplete job data.");
+            return False;
+        }
+
+        # Extract the result field from the job data
+        results = job_data.get("result", []);
+        if not results {
+            self.logger.error("No results found in job data.");
+            job_entry = self.get_job_entry(job_id=job_id);
+            job_entry.set_status(ItemStatus.FAILED);
+            return False;
+        }
+
+        # Get the vector store action and ingest the texts
+        vector_store_action = self.get_agent().get_action(action_label=self.vector_store_action);
+        if not vector_store_action {
+            self.logger.error(f"Vector store action '{self.vector_store_action}' not found.");
+            job_entry = self.get_job_entry(job_id=job_id);
+            job_entry.set_status(ItemStatus.FAILED);
+            return False;
+        }
+
+        doc_entry = None;
+        # grab the job in question
+        job_entry = self.get_job_entry(job_id=job_id);
+
+        if not job_entry {
+            self.logger.error(f"Job entry '{job_id}' not found.");
+            return False;
+        }
+
         try {
-
-            # Ensure the job status is completed
-            if job_data.get("status") == "error" {
-                self.logger.error(f"Unable to ingest failed job data");
-                self.delete_doc_job(job_id=job_id);
-                return False;
-            }
-
-            if job_data.get("status") != "completed" {
-                self.logger.error("Unable to ingest incomplete job data.");
-                return False;
-            }
-
-            # Extract the result field from the job data
-            results = job_data.get("result", []);
-            if not results {
-                self.logger.error("No results found in job data.");
-                self.delete_doc_job(job_id=job_id);
-                return False;
-            }
-
-            # Get the vector store action and ingest the texts
-            vector_store_action = self.get_agent().get_actions().get(action_label=self.vector_store_action);
-            if not vector_store_action {
-                self.logger.error(f"Vector store action '{self.vector_store_action}' not found.");
-                return False;
-            }
-
+            # set job_entry status to ingesting
+            job_entry.set_status(ItemStatus.INGESTING);
             # Prepare texts and metadatas and ingest
             for result in results {
 
@@ -281,7 +375,6 @@ node DeepDocClientAction :Action: {
                 # Consolidate page numbers into a range string (e.g., "1-2")
                 page_numbers = metadata.get("page_num_int", []);
                 if page_numbers {
-
                     unique_pages = sorted(set(page_numbers));
                     if len(unique_pages) > 1 {
                         consolidated_page = f"{unique_pages[0]}-{unique_pages[-1]}";
@@ -299,25 +392,30 @@ node DeepDocClientAction :Action: {
                     "job_id": job_id
                 };
 
-                # add any custom metadata to the filtered_metadata dict
-                doc_manifest_entry = self.get_doc_entry(job_id=job_id, filename=filtered_metadata["filename"]);
-                if (doc_manifest_entry) {
-                    filtered_metadata.update(doc_manifest_entry["metadata"]);
-                    # update the manifest entry with the consolidated metadata
-                    self.update_doc_entry(
-                        job_id=job_id,
-                        filename=filtered_metadata["filename"],
-                        doc={"metadata": filtered_metadata}
-                    );
+                # if there's a previous doc entry that completed, set the status to completed
+                if doc_entry {
+                    # set the previous doc entry status to completed
+                    doc_entry.set_status(ItemStatus.COMPLETED);
                 }
 
-                if( doc_manifest_entry.get("file_type") == "url" ) {
+                # add any custom metadata to the filtered_metadata dict
+                doc_entry = job_entry.get_doc_entry_by_name(filtered_metadata["filename"]);
+                if doc_entry {
+                    # set doc entry status to ingesting
+                    doc_entry.set_status(ItemStatus.INGESTING);
+                    # filter out metadata keys that are not in the filtered_metadata
+                    filtered_metadata.update(doc_entry.get_metadata());
+                    # update the manifest entry with the consolidated metadata
+                    doc_entry.set_metadata(filtered_metadata);
+                }
+
+                if( isinstance(doc_entry, DocURLEntry) ) {
                     # if the file is a URL, update the source in metadata
-                    filtered_metadata["source"] = doc_manifest_entry.get("file_path", "");
+                    filtered_metadata["source"] = doc_entry.get_source();
                 } else {
                     # compose the path to file and update source
-                    srv_filename = f"ddc/{job_id}_{self.format_filename(filtered_metadata['filename'])}";
-                    srv_source = file_interface.get_file_url(srv_filename);
+                    srv_filename = f"{job_id}_{self.format_filename(filtered_metadata['filename'])}";
+                    srv_source = self.get_file_url(srv_filename);
                     if srv_source {
                         filtered_metadata["source"] = srv_source;
                     } else {
@@ -335,25 +433,34 @@ node DeepDocClientAction :Action: {
                 if(ids) {
                     chunk_id = ids[0];
                     # update the manifest with the chunk ID for this document
-                    self.insert_doc_chunk_id(chunk_id, job_id, filtered_metadata['filename']);
+                    doc_entry.add_chunk_id(chunk_id);
                     # log the chunk ID and metadata
                     self.logger.info(f"{chunk_id} added to vector store with metadata: {filtered_metadata}");
                 }
             }
-
-            # update the agent descriptor with changes
-            self.get_agent().dump_descriptor();
+            if doc_entry {
+                # set the last doc entry status to completed
+                doc_entry.set_status(ItemStatus.COMPLETED);
+            }
+            # set job_entry status to completed
+            job_entry.set_status(ItemStatus.COMPLETED);
 
             return True;
 
         } except Exception as e {
             self.logger.error(f"Exception occurred while importing job data: {str(e)}");
             self.logger.error(traceback.format_exc());
+            # set job_entry status to failed
+            job_entry.set_status(ItemStatus.FAILED);
+            # set the current doc_entry status to failed if it exists
+            if doc_entry {
+                doc_entry.set_status(ItemStatus.FAILED);
+            }
             return False;
         }
     }
 
-    can get_callback_url(walker_name:str) -> str {
+    can generate_callback_url(walker_name:str) -> str {
         # setup procedure for webhook registration on deepdoc
 
         base_url = self.base_url;
@@ -375,266 +482,140 @@ node DeepDocClientAction :Action: {
         return callback_url;
     }
 
-    can get_doc_manifest() -> dict {
-        # Returns the document manifest containing file details for each job ID.
-        return self.doc_manifest;
+    can get_job_entry(job_id:str) -> JobEntry {
+        collection = self.get_collection();
+        return (collection spawn _get_job_entry(job_id=job_id)).job_entry;
     }
 
-    can get_doc_entries() -> list[dict] {
-        # Returns a flat list of all document entries.
-        entries = [];
-        for (job_id, docs) in self.doc_manifest.items() {
-            for doc in docs {
-                entries.append({
-                    "job_id": job_id,
-                    "file_path": doc["file_path"],
-                    "filename": doc["filename"],
-                    "file_type": doc["file_type"],
-                    "metadata": doc["metadata"],
-                    "chunk_ids": doc["chunk_ids"]
-                });
-            }
+    can list_doc_entries(page:int, limit:int) -> list[dict] {
+        # Lists all document entries in the manifest with pagination.
+
+        collection = self.get_collection();
+        result = collection spawn _list_doc_entries(page=page, limit=limit);
+        if not result {
+            self.logger.error("No document entries found in the manifest.");
+            return {};
         }
-        return entries;
+        return {
+            "page": result.page,
+            "limit": result.limit,
+            "total_items": result.total_items,
+            "total_pages": result.total_pages,
+            "has_previous": result.has_previous,
+            "has_next": result.has_next,
+            "items": result.items
+        };
     }
 
-    can get_doc_entry(job_id:str="", filename:str) -> dict {
-        # Returns the document manifest entry by filename for a specific job ID.
+    can get_doc_entry(job_id:str, doc_id:str) -> dict {
+        # Returns the document manifest entry by id.
 
-        # if we are only searching by filename, we need to search all job_ids
+        job_entry = self.get_job_entry(job_id=job_id);
 
-        if filename and job_id == "" {
-            for (job_id, docs) in self.doc_manifest.items() {
-                for doc in docs {
-                    if doc["filename"] == filename {
-                        return doc;
-                    }
-                }
-            }
+        if not job_entry {
+            self.logger.error(f"Job ID {job_id} not found in doc manifest.");
             return {};
         }
 
-        if job_id in self.doc_manifest.keys() {
-            # Find the entry for the specified filename
-            for item in self.doc_manifest[job_id] {
-                if item["filename"] == filename {
-                    return item;
-                }
-            }
-        } else {
-            self.logger.error(f"Entry [ {job_id} ] {filename} not found in doc manifest.");
+        doc_entry = job_entry.get_doc_entry(id=doc_id);
+
+        if not doc_entry {
+            self.logger.error(f"Document entry with ID '{doc_id}' not found.");
             return {};
         }
+
+        return doc_entry.export();
     }
 
-    can add_doc_entry(job_id:str, file:dict={}, url:dict={}) -> bool {
-        # Adds a new entry to the document manifest for a specific job ID.
-        # Prevents duplicate entries from being added.
-
-        if file {
-
-            # ensure the output filename is without whitespaces and slashes
-            output_filename = f"{job_id}_{self.format_filename(file.get('name'))}";
-            output_file_path = f"ddc/{output_filename}";
-            # save document to the file system
-            file_interface.save_file(output_file_path, file.get("content"));
-            # retrieve file url
-            srv_source = file_interface.get_file_url(f"ddc/{output_filename}");
-
-            # if the file url is not available, set the source to the filename
-            if not srv_source {
-                self.logger.error(f"Unable to save file {output_filename} to the file system.");
-                srv_source = "";
-            }
-
-            # Initialize the doc_manifest entry for the job_id if it does not exist
-            if job_id not in self.doc_manifest.keys() {
-                self.doc_manifest[job_id] = [];
-            }
-
-            # Check for duplicates
-            for entry in self.doc_manifest[job_id] {
-                if entry["filename"] == file.get("name") {
-                    self.logger.error(f"Duplicate entry for file '{file.get("name")}' in job ID '{job_id}'.");
-                    return False;
-                }
-            }
-
-            # Append the file details to the doc_manifest entry if no duplicate is found
-            self.doc_manifest[job_id].append({
-                "file_path": srv_source,
-                "filename": file.get("name"),
-                "file_type": file.get("type"),
-                "metadata": file.get("metadata", {}),
-                "chunk_ids": file.get("chunk_ids", [])
-            });
-
-            return True;
-
-        }
-
-        if url {
-            # Initialize the doc_manifest entry for the job_id if it does not exist
-            if job_id not in self.doc_manifest.keys() {
-                self.doc_manifest[job_id] = [];
-            }
-
-            # Check for duplicates
-            for entry in self.doc_manifest[job_id] {
-                if entry["filename"] == url.get("name") {
-                    self.logger.error(f"Duplicate entry for file '{url.get("name")}' in job ID '{job_id}'.");
-                    return False;
-                }
-            }
-
-            # Append the URL details to the doc_manifest entry if no duplicate is found
-            self.doc_manifest[job_id].append({
-                "file_path": url.get("source"),
-                "filename": url.get("name"),
-                "file_type": url.get("type"),
-                "metadata": url.get("metadata", {}),
-                "chunk_ids": url.get("chunk_ids", [])
-            });
-
-            return True;
-        }
-    }
-
-    can update_doc_entry(job_id:str, filename:str, doc:dict) -> bool {
-        # Updates an existing entry in the document manifest for a specific job ID.
-
-        if job_id in self.doc_manifest.keys() {
-            # Find the entry for the specified filename
-            for item in self.doc_manifest[job_id] {
-                if item["filename"] == filename {
-                    # Update the entry with new file details
-                    if "file_path" in doc {
-                        # if the file is not a URL, use the supplied file path
-                        item["file_path"] = doc["file_path"];
-                    }
-                    item["metadata"] = doc.get("metadata", {});
-
-                    return True;
-                }
-            }
-            self.logger.error(f"Filename {filename} not found in doc manifest for job ID {job_id}.");
-            return False;
-        } else {
-            self.logger.error(f"Job ID {job_id} not found in doc manifest.");
-            return False;
-        }
-    }
-
-    can insert_doc_chunk_id(chunk_id:str, job_id:str, filename:str) -> bool {
-        # Adds a document chunk ID generated from being ingested into the vector store
-        # to the manifest entry for a specific file.
-
-        if job_id in self.doc_manifest.keys() {
-            # Find the entry for the specified filename
-            for item in self.doc_manifest[job_id] {
-                if item["filename"] == filename {
-                    # Update the entry with the new chunk ID
-                    item["chunk_ids"].append(chunk_id);
-                    return True;
-                }
-            }
-            self.logger.error(f"Filename {filename} not found in doc manifest for job ID {job_id}.");
-            return False;
-        } else {
-            self.logger.error(f"Job ID {job_id} not found in doc manifest.");
-            return False;
-        }
-    }
-
-    can delete_doc_entry(job_id:str, filename:str) -> bool {
+    can delete_doc_entry(job_id:str, doc_id:str) -> bool {
         # Deletes a specific entry from the document manifest for a given job ID.
         # set manifesrt_only to True to delete the entry from the manifest only and not the file system
 
-        doc = self.get_doc_entry(job_id=job_id, filename=filename);
+        job_entry = self.get_job_entry(job_id=job_id);
 
-        if job_id not in self.doc_manifest.keys() {
+        if not job_entry {
             self.logger.error(f"Job ID {job_id} not found in doc manifest.");
             return False;
         }
 
-        if not doc {
-            self.logger.error(f"Document entry for job ID '{job_id}' and filename '{filename}' not found.");
+        doc_entry = job_entry.get_doc_entry(id=doc_id);
+
+        if not doc_entry {
+            self.logger.error(f"Document entry with ID '{doc_id}' not found.");
             return False;
         }
 
-        # Filter out the entry with the specified file name
-        updated_entries = [
-            entry for entry in self.doc_manifest[job_id] if entry["filename"] != filename
-        ];
-
-        # check if the file exists in the manifest...
-        if len(updated_entries) < len(self.doc_manifest[job_id]) {
-            if doc['file_type'] != "url" {
-                # Attempt to delete the file from the filesystem if not url
-                try {
-                    file_interface.delete_file(f"ddc/{job_id}_{self.format_filename(filename)}");
-                } except Exception as e {
-                    self.logger.error(f"Failed to delete file from filesystem: {str(e)}");
-                }
+        if not isinstance(doc_entry, DocURLEntry) {
+            # Attempt to delete the file from the filesystem if not url
+            try {
+                self.delete_file(f"{job_id}_{self.format_filename(doc_entry.name)}");
+            } except Exception as e {
+                self.logger.error(f"Failed to delete file from filesystem: {str(e)}");
             }
         }
 
         # remove any vector strore entries associated with the file
-        self.remove_doc_vector_store_entries(job_id=job_id, filename=filename);
-
-        if updated_entries {
-            # update the doc_manifest with the remaining entries
-            self.doc_manifest[job_id] = updated_entries;
-        } else {
-            # if no entries remain for the job_id, remove the job_id from the manifest
-            self.cancelled_jobs.append(job_id);
-            del self.doc_manifest[job_id];
-        }
-
-        # update the agent descriptor with changes
-        self.get_agent().update();
+        self.remove_doc_vector_store_entries(job_id=job_id, doc_id=doc_id);
+        # finally remove the doc entry from the job.. and the entire job if it's the last entry
+        job_entry.delete_doc_entry(doc_id);
 
         return True;
-
     }
 
-    can delete_doc_job(job_id:str) -> bool {
+    can delete_job_entry(job_id:str) -> bool {
         # Deletes all entries for a specific job ID from the document manifest and everywhere else.
 
-        if job_id not in self.doc_manifest.keys() {
+        job_entry = self.get_job_entry(job_id=job_id);
+
+        if not job_entry {
             self.logger.error(f"Job ID {job_id} not found in doc manifest.");
             return False;
         }
 
-        # Attempt to delete all files associated with the job ID
-        for entry in self.doc_manifest[job_id] {
-            self.delete_doc_entry(job_id=job_id, filename=entry["filename"]);
+        # iterate through and delete all document entries associated with the job ID
+        doc_entries = job_entry.get_doc_entries();
+
+        if not doc_entries {
+            self.logger.info(f"No document entries found for job ID {job_id}. Removing job entry only.");
+            # If no document entries, just remove the job entry
+            job_entry.delete();
+            return True;  # Nothing to remove, so return success
+        }
+        for doc_entry in doc_entries {
+            # remove the document entry
+            self.delete_doc_entry(job_id=job_id, doc_id=doc_entry.id);
         }
 
-        return True;
+        return True;  # Successfully removed all document entries for the job ID
     }
 
-    can remove_doc_vector_store_entries(job_id:str, filename:str) -> bool {
-        # Removes all vector store entries associated with a specific document using its chunk IDs.
+    can remove_doc_vector_store_entries(job_id:str, doc_id:str) -> bool {
+        # Removes all vector store entries associated with a specific document by ID.
+        job_entry = self.get_job_entry(job_id=job_id);
+
+        if not job_entry {
+            self.logger.error(f"Job ID {job_id} not found in doc manifest.");
+            return False;
+        }
 
         # Retrieve the vector store action
-        vector_store_action = self.get_agent().get_actions().get(action_label=self.vector_store_action);
+        vector_store_action = self.get_agent().get_action(action_label=self.vector_store_action);
         if not vector_store_action {
             self.logger.error(f"Vector store action '{self.vector_store_action}' not found.");
             return False;
         }
 
         # Retrieve the document manifest entry for the specified job ID and filename
-        item = self.get_doc_entry(job_id=job_id, filename=filename);
+        item = job_entry.get_doc_entry(id=doc_id);
         if not item {
-            self.logger.error(f"Document manifest entry for job ID '{job_id}' and filename '{filename}' not found.");
+            self.logger.error(f"Document manifest entry for job ID '{job_id}' and filename '{item.name}' not found.");
             return False;
         }
 
         # Extract chunk IDs from the document manifest entry
-        chunk_ids = item.get("chunk_ids", []);
+        chunk_ids = item.get_chunk_ids();
         if not chunk_ids {
-            self.logger.info(f"No chunk IDs found for job ID '{job_id}' and filename '{filename}'.");
+            self.logger.info(f"No chunk IDs found for job ID '{job_id}' and filename '{item.name}'.");
             return True;  # Nothing to remove, so return success
         }
 
@@ -642,13 +623,13 @@ node DeepDocClientAction :Action: {
         success = True;
         for chunk_id in chunk_ids {
             if not vector_store_action.delete_document(id=chunk_id) {
-                self.logger.error(f"Failed to delete vector store entry with chunk ID '{chunk_id}' for filename '{filename}'.");
+                self.logger.error(f"Failed to delete vector store entry with chunk ID '{chunk_id}' for filename '{item.name}'.");
                 success = False;
             }
         }
 
         if success {
-            self.logger.info(f"Successfully removed all vector store entries for job ID '{job_id}' and filename '{filename}'.");
+            self.logger.info(f"Successfully removed all vector store entries for job ID '{job_id}' and filename '{item.name}'.");
         }
 
         return success;
@@ -669,5 +650,211 @@ node DeepDocClientAction :Action: {
         return formatted_filename;
     }
 
+    can migrate_manifest() -> None {
+        # """
+        # Migrates the old manifest entries to the new format.
+        # This is a placeholder for future migration logic.
+        # """
+        if self.doc_manifest {
 
+            self.logger.info("Migrating old DeepDoc manifest entries to new format.");
+
+            collection = self.get_collection();
+            vector_store_action = self.get_agent().get_action(action_label=self.vector_store_action);
+            jobs_to_remove = [];
+
+            if not vector_store_action {
+                self.logger.error(f"Vector store action '{self.vector_store_action}' not found. Unable to continue migration.");
+                return False;
+            }
+
+            # Iterate over each job_id and its associated entries in the old manifest
+            for (job_id, entries) in self.doc_manifest.items() {
+
+                job_entry = JobEntry(job_id=job_id);
+
+                collection ++> job_entry;
+                all_entries_processed = True;
+
+                # Iterate over each entry (document/file/url) in the job
+                for entry in entries {
+                    # Check if the entry has the required fields
+                    if "file_path" in entry and "filename" in entry and "file_type" in entry {
+                        # If the entry is a URL type
+                        if entry["file_type"] == "url" {
+                            # Create a DocURLEntry node for the URL
+                            doc_url_entry = DocURLEntry(
+                            job_id=job_id,
+                            name=entry["filename"],
+                            source=entry["file_path"],
+                            metadata=entry.get("metadata", {}),
+                            chunk_ids=entry.get("chunk_ids", [])
+                            );
+                            doc_url_entry.set_status(ItemStatus.COMPLETED);
+                            # Attach the DocURLEntry node to the job_entry
+                            job_entry ++> doc_url_entry;
+                            self.logger.info(f"URL {entry['filename']} successfully migrated.");
+                        } else {
+                            # Otherwise, treat as a file (not a URL)
+                            try {
+                                # If the file_path is a remote URL, download it
+                                if entry["file_path"].startswith("http://") or entry["file_path"].startswith("https://") {
+
+                                    output_filename = f"{job_id}_{self.format_filename(entry['filename'])}";
+                                    # Download the file content
+                                    response = requests.get(entry["file_path"]);
+                                    # If download is successful
+                                    if response.status_code == 200 {
+                                        # Save the file to local storage
+                                        self.save_file(output_filename, response.content);
+                                        # Get the local file URL/path
+                                        updated_source = self.get_short_file_url(output_filename);
+                                        metadata = entry.get("metadata", {});
+                                        chunk_ids = entry.get("chunk_ids", []);
+                                        # update source in metadata if it exists
+                                        if "source" in metadata {
+                                            metadata["source"] = updated_source;
+                                        }
+                                        # Create a DocFileEntry node for the file
+                                        doc_file_entry = DocFileEntry(
+                                            job_id=job_id,
+                                            name=entry["filename"],
+                                            source=updated_source,
+                                            mimetype=entry["file_type"],
+                                            metadata=metadata,
+                                            chunk_ids=chunk_ids
+                                        );
+
+                                        # Attach the DocFileEntry node to the job_entry
+                                        job_entry ++> doc_file_entry;
+
+                                        # update the vector store metadata with the new source
+                                        for chunk_id in chunk_ids {
+                                            # update the vector store entry with the new source
+                                            vector_store_action.update_document(
+                                                id=chunk_id,
+                                                data={'metadata': metadata}
+                                            );
+                                            self.logger.info(f"Metadata for {chunk_id} successfully updated.");
+                                        }
+                                        doc_file_entry.set_status(ItemStatus.COMPLETED);
+                                        self.logger.info(f"File {entry['filename']} successfully migrated.");
+
+                                        # delete the old file entry from the manifest, with recreated old filename
+                                        output_file_path = f"ddc/{output_filename}";
+                                        file_interface.delete_file(output_file_path);
+                                    } else {
+                                        # Log an error if the file could not be downloaded
+                                        self.logger.error(f"Failed to download file from {entry['file_path']}: {response.status_code}");
+                                        all_entries_processed = False;
+                                    }
+                                }
+                            } except Exception as e {
+                                # Log any exceptions that occur during file download or processing
+                                self.logger.error(f"Error copying file from {entry['file_path']}: {str(e)}");
+                                self.logger.error(traceback.format_exc());
+                                all_entries_processed = False;
+                            }
+                        }
+                    } else {
+                        # Log an error if the entry format is invalid
+                        self.logger.error(f"Invalid entry format: {entry}");
+                        all_entries_processed = False;
+                    }
+                }
+                # If all entries for this job were processed, mark the job for removal from the old manifest
+                if all_entries_processed {
+                    jobs_to_remove.append(job_id);
+                    job_entry.set_status(ItemStatus.COMPLETED);
+                }
+
+            }
+            # Remove all jobs that were successfully migrated from the old doc_manifest
+            for job_id in jobs_to_remove {
+                del self.doc_manifest[job_id];
+            }
+        }
+    }
+
+}
+
+walker _get_job_entry {
+    # spawns on action collection and finds a job by job_id
+
+    has job_id:str = "";
+    has job_entry:JobEntry = None;
+
+    obj __specs__ {
+        # make this a private walker
+        static has private: bool = True;
+    }
+
+    can on_collection with Collection entry {
+        visit [-->](`?JobEntry)(?job_id == self.job_id);
+    }
+
+    can on_job_entry with JobEntry entry {
+        self.job_entry = here;
+    }
+
+}
+
+walker _list_doc_entries {
+    # Spawns on action collection and returns a paginated, flattened list of doc entries with total count and page control
+
+    has page:int = 1;               # page number, 1-based
+    has limit:int = 50;             # number of items per page, 0 means all
+    has offset:int = 0;             # calculated from page and limit
+    has total_items:int = 0;        # total number of items
+    has total_pages:int = 1;
+    has has_previous:bool = False;
+    has has_next:bool = False;
+    has current_index:int = 0;
+    has items:list = [];
+
+    # set up logger
+    static has logger:Logger = logging.getLogger(__name__);
+
+    obj __specs__ {
+        static has private: bool = True;
+    }
+
+    can on_collection with Collection entry {
+        # First, count total doc entries
+        self.total_items = 0;
+        job_entries = [-->](`?JobEntry);
+
+        for job in job_entries {
+            self.total_items += len(job.get_doc_entries());
+        }
+
+        # Calculate offset based on page and limit
+        if self.limit > 0 {
+            self.offset = (self.page - 1) * self.limit;
+            self.total_pages = (self.total_items // self.limit) + (1 if self.total_items % self.limit > 0 else 0);
+            self.has_previous = self.page > 1;
+            self.has_next = self.page < self.total_pages;
+        } else {
+            self.offset = 0;
+            self.total_pages = 1;
+            self.has_previous = False;
+            self.has_next = False;
+        }
+
+        visit [-->](`?JobEntry);
+    }
+
+    can on_job_entry with JobEntry entry {
+        visit [-->](`?DocEntry);
+    }
+
+    can on_doc_entry with DocEntry entry {
+        if self.current_index >= self.offset and (self.limit == 0 or len(self.items) < self.limit) {
+            self.items.append(here.export());
+        }
+        self.current_index += 1;
+        if self.limit != 0 and len(self.items) >= self.limit {
+            disengage;
+        }
+    }
 }
