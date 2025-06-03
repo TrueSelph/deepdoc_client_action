@@ -154,6 +154,23 @@ This walker removes documents by job ID from the vector store and deletes local 
 }
 ```
 
+#### 5. Cancel Job
+
+This walker cancels a job by job ID from the vector store and deletes local file system entries.
+
+**Payload Example:**
+
+```json
+{
+  "agent_id": "12345",
+  "module_root": "actions.jivas.deepdoc_client_action",
+  "walker": "cancel_job",
+  "args": {
+    "job_id": "67890",
+  }
+}
+```
+
 ---
 
 ## How to Configure
