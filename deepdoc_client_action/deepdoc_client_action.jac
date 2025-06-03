@@ -27,25 +27,6 @@ node DeepDocClientAction :Action: {
     has vector_store_action:str = "TypesenseVectorStoreAction";
     has doc_manifest:dict = {}; # maintained for migrations
 
-    # {
-    # "e3375fee-91fa-4056-b4d8-e72d3c97c315": [
-    #     {
-    #     "file_path": "http://127.0.0.1:9000/files/ddc/e3375fee-91fa-4056-b4d8-e72d3c97c315_state_of_the_union_copy.txt",
-    #     "filename": "state_of_the_union copy.txt",
-    #     "file_type": "text/plain",
-    #     "metadata": {
-    #         "source": "http://127.0.0.1:9000/files/ddc/e3375fee-91fa-4056-b4d8-e72d3c97c315_state_of_the_union_copy.txt",
-    #         "page": "1",
-    #         "filename": "state_of_the_union copy.txt",
-    #         "job_id": "e3375fee-91fa-4056-b4d8-e72d3c97c315"
-    #     },
-    #     "chunk_ids": [
-    #         "doc_427ee19232a6b09f",
-    #         "doc_6f6976ba8ddc8678"
-    #     ]
-    #     }
-    # ]
-    # }
     can on_register() -> None {
         # """
         # Registers the DeepDocClientAction with the agent's action collection.
@@ -77,7 +58,7 @@ node DeepDocClientAction :Action: {
         }
     }
 
-    can queue_deepdoc_job(
+    can queue_job(
         urls:list[str]=[],
         files:list[dict]=[],
         metadatas:list[dict]=[],
@@ -238,7 +219,7 @@ node DeepDocClientAction :Action: {
         }
     }
 
-    can get_deepdoc_job_status(job_id:str) -> dict {
+    can get_job_status(job_id:str) -> dict {
         # """
         # Retrieves the status of a queued job from the DeepDoc service.
 
@@ -275,7 +256,58 @@ node DeepDocClientAction :Action: {
         }
     }
 
-    can ingest_deepdoc_job(job_id:str, job_data:dict) -> bool {
+    can cancel_job(job_id:str) -> dict {
+        # """
+        # Cancels a deepdoc job which is still in processing
+
+        # Args:
+        #     job_id (str): The ID of the job to cancel.
+
+        # Returns:
+        #     dict: The status and result of the job.
+        # """
+        try {
+            # Make the GET request to the DeepDoc service
+            response = requests.post(f"{self.api_url}/job/{job_id}/cancel");
+
+            # Check if the response is successful
+            if response.status_code != 200 {
+                self.logger.error(f"Failed to cancel job: {response.text}");
+                return {"status": "error", "error": response.text};
+            }
+
+            # now remove the job entry from the collection
+            job_entry = self.get_job_entry(job_id=job_id);
+            if job_entry {
+                # set the job entry status to cancelled
+                job_entry.set_status(ItemStatus.CANCELLED);
+
+                # now remove any document entries associated with the job
+                doc_entries = job_entry.get_doc_entries();
+                if doc_entries {
+                    for doc_entry in doc_entries {
+                        # remove the document entry
+                        # self.delete_doc_entry(job_id=job_id, doc_id=doc_entry.id);
+                        # set the doc entry status to cancelled
+                        doc_entry.set_status(ItemStatus.CANCELLED);
+                    }
+                }
+
+            } else {
+                self.logger.error(f"Job entry with ID {job_id} not found in the collection.");
+            }
+
+            # Parse the response JSON
+            response_data = response.json();
+
+        } except Exception as e {
+            self.logger.error(f"Exception occurred while attempting to cancel the job: {str(e)}");
+            self.logger.error(traceback.format_exc());
+            return {"status": "error", "error": str(e)};
+        }
+    }
+
+    can ingest_job(job_id:str, job_data:dict) -> bool {
         # """
         # Imports the results of a completed job into the vector store using add_texts.
 
@@ -289,7 +321,7 @@ node DeepDocClientAction :Action: {
         # Ensure the job status is completed
         if job_data.get("status") == "error" {
             self.logger.error(f"Unable to ingest failed job data");
-            job_entry = self.get_job(job_id=job_id);
+            job_entry = self.get_job_entry(job_id=job_id);
             job_entry.set_status(ItemStatus.FAILED);
             return False;
         }
@@ -303,7 +335,7 @@ node DeepDocClientAction :Action: {
         results = job_data.get("result", []);
         if not results {
             self.logger.error("No results found in job data.");
-            job_entry = self.get_job(job_id=job_id);
+            job_entry = self.get_job_entry(job_id=job_id);
             job_entry.set_status(ItemStatus.FAILED);
             return False;
         }
@@ -312,14 +344,14 @@ node DeepDocClientAction :Action: {
         vector_store_action = self.get_agent().get_action(action_label=self.vector_store_action);
         if not vector_store_action {
             self.logger.error(f"Vector store action '{self.vector_store_action}' not found.");
-            job_entry = self.get_job(job_id=job_id);
+            job_entry = self.get_job_entry(job_id=job_id);
             job_entry.set_status(ItemStatus.FAILED);
             return False;
         }
 
         doc_entry = None;
         # grab the job in question
-        job_entry = self.get_job(job_id=job_id);
+        job_entry = self.get_job_entry(job_id=job_id);
 
         if not job_entry {
             self.logger.error(f"Job entry '{job_id}' not found.");
@@ -428,7 +460,7 @@ node DeepDocClientAction :Action: {
         }
     }
 
-    can get_callback_url(walker_name:str) -> str {
+    can generate_callback_url(walker_name:str) -> str {
         # setup procedure for webhook registration on deepdoc
 
         base_url = self.base_url;
@@ -450,12 +482,14 @@ node DeepDocClientAction :Action: {
         return callback_url;
     }
 
-    can get_job(job_id:str) -> JobEntry {
+    can get_job_entry(job_id:str) -> JobEntry {
         collection = self.get_collection();
         return (collection spawn _get_job_entry(job_id=job_id)).job_entry;
     }
 
     can list_doc_entries(page:int, limit:int) -> list[dict] {
+        # Lists all document entries in the manifest with pagination.
+
         collection = self.get_collection();
         result = collection spawn _list_doc_entries(page=page, limit=limit);
         if not result {
@@ -475,7 +509,8 @@ node DeepDocClientAction :Action: {
 
     can get_doc_entry(job_id:str, doc_id:str) -> dict {
         # Returns the document manifest entry by id.
-        job_entry = self.get_job(job_id=job_id);
+
+        job_entry = self.get_job_entry(job_id=job_id);
 
         if not job_entry {
             self.logger.error(f"Job ID {job_id} not found in doc manifest.");
@@ -495,7 +530,8 @@ node DeepDocClientAction :Action: {
     can delete_doc_entry(job_id:str, doc_id:str) -> bool {
         # Deletes a specific entry from the document manifest for a given job ID.
         # set manifesrt_only to True to delete the entry from the manifest only and not the file system
-        job_entry = self.get_job(job_id=job_id);
+
+        job_entry = self.get_job_entry(job_id=job_id);
 
         if not job_entry {
             self.logger.error(f"Job ID {job_id} not found in doc manifest.");
@@ -526,9 +562,10 @@ node DeepDocClientAction :Action: {
         return True;
     }
 
-    can delete_doc_job(job_id:str) -> bool {
+    can delete_job_entry(job_id:str) -> bool {
         # Deletes all entries for a specific job ID from the document manifest and everywhere else.
-        job_entry = self.get_job(job_id=job_id);
+
+        job_entry = self.get_job_entry(job_id=job_id);
 
         if not job_entry {
             self.logger.error(f"Job ID {job_id} not found in doc manifest.");
@@ -541,7 +578,7 @@ node DeepDocClientAction :Action: {
         if not doc_entries {
             self.logger.info(f"No document entries found for job ID {job_id}. Removing job entry only.");
             # If no document entries, just remove the job entry
-            job_entry.delete_job();
+            job_entry.delete();
             return True;  # Nothing to remove, so return success
         }
         for doc_entry in doc_entries {
@@ -554,7 +591,7 @@ node DeepDocClientAction :Action: {
 
     can remove_doc_vector_store_entries(job_id:str, doc_id:str) -> bool {
         # Removes all vector store entries associated with a specific document by ID.
-        job_entry = self.get_job(job_id=job_id);
+        job_entry = self.get_job_entry(job_id=job_id);
 
         if not job_entry {
             self.logger.error(f"Job ID {job_id} not found in doc manifest.");

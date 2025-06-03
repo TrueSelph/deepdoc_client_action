@@ -15,7 +15,7 @@ node DocEntry :GraphNode: {
     has metadata:dict = {};
     has chunk_ids:list = [];
 
-    can get_job() {
+    can get_job_entry() {
         Utils.node_obj([<--]);
     }
 

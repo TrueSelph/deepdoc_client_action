@@ -30,7 +30,7 @@ walker add_documents :interact_graph_walker: {
     }
 
     can on_action with Action entry {
-        # call the queue_deepdoc_job method on the action
+        # call the queue_job method on the action
 
         # check if the urls and files lists are empty
         if( not self.urls and not self.files ) {
@@ -41,13 +41,13 @@ walker add_documents :interact_graph_walker: {
         }
 
         # generate the callback URL to pass to the deepdoc service
-        if( not(callback_url := here.get_callback_url("deepdoc_callback")) ) {
+        if( not(callback_url := here.generate_callback_url("deepdoc_callback")) ) {
             Jac.get_context().status = 500;
             Jac.get_context().error = "Unable to complete operation. Failed to generate a callback URL for job scheduling.";
             disengage;
         }
 
-        self.response = here.queue_deepdoc_job(
+        self.response = here.queue_job(
             urls=self.urls,
             files=self.files,
             metadatas=self.metadatas,

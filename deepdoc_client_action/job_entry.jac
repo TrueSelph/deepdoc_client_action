@@ -107,12 +107,12 @@ node JobEntry :GraphNode: {
         Jac.destroy( doc_entry );
         # if this is the last entry in this job, also remove the job itself
         if not [-->](`?DocEntry) {
-            self.delete_job();
+            self.delete();
         }
         return True;
     }
 
-    can delete_job() -> list {
+    can delete() -> list {
         return (self spawn _purge_job()).removed;
     }
 

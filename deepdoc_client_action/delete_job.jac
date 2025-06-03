@@ -29,7 +29,7 @@ walker delete_job :interact_graph_walker: {
         # call the remove/delete method on the action
 
         # remove the document
-        self.response = here.delete_doc_job(self.job_id);
+        self.response = here.delete_job_entry(self.job_id);
 
         if not self.response {
             Jac.get_context().status = 400;

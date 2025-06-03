@@ -205,9 +205,9 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             "COMPLETED": "green",
             "PROCESSING": "orange",
             "INGESTING": "orange",
-            "PENDING": "gray",
+            "PENDING": "blue",
             "FAILED": "red",
-            "CANCELLED": "yellow",
+            "CANCELLED": "gray",
         }
         color = color_map.get(status, "gray")
         return f"<span style='background-color: {color}; color: white; padding: 2px 6px; border-radius: 4px;'>{status}</span>"
@@ -303,7 +303,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         f"Created: {format_datetime(first_doc.get('created_on', ''))}"
                     )
                 with col3:
-                    if status == "COMPLETED":
+                    if status in ("COMPLETED", "CANCELLED"):
                         st.text(
                             f"Completed: {format_datetime(first_doc.get('completed_on', ''))}"
                         )
@@ -325,19 +325,10 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         with col1:
                             if st.button("Yes, Cancel Job"):
                                 # Prepare arguments for cancellation
-                                args = {
-                                    "documents": [
-                                        {
-                                            "job_id": job_id,
-                                            "filename": doc["name"],
-                                        }
-                                        for doc in documents
-                                        if not doc.get("chunk_ids")
-                                    ]
-                                }
+                                args = {"job_id": job_id}
                                 # Call the cancel_documents walker
                                 cancel_result = call_action_walker_exec(
-                                    agent_id, module_root, "cancel_documents", args
+                                    agent_id, module_root, "cancel_job", args
                                 )
                                 if cancel_result:
                                     st.session_state.current_page = 1
@@ -434,11 +425,11 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         st.text(document.get("mimetype", ""))
                     with col4:
                         # Display processing time if completed
-                        if doc_status == "COMPLETED":
+                        if doc_status == "COMPLETED" and processing_time != "00:00:00":
                             st.text(f"Processed in: {processing_time}")
                     with col5:
                         # Show "Delete" button if processed, otherwise "Processing"
-                        if document.get("chunk_ids"):
+                        if doc_status in ("COMPLETED", "FAILED", "CANCELLED"):
                             if (
                                 st.session_state.confirm_state["active"]
                                 and st.session_state.confirm_state["type"]

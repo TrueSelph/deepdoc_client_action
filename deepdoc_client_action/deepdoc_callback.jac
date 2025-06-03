@@ -42,20 +42,14 @@ walker deepdoc_callback :interact_graph_walker: {
         status = self.params.get("status", "");
         error_message = self.params.get("error", "");
 
-        # quietly ignore cancelled jobs
-        if job_id in here.cancelled_jobs {
-            here.cancelled_jobs.remove(job_id);
-            return None;
-        }
-
         if status == "completed" {
             # Retrieve the deepdoc job data
-            job_data = here.get_deepdoc_job_status(job_id=job_id);
+            job_data = here.get_job_status(job_id=job_id);
 
             if job_id and job_data {
                 try {
                     # Ingest the job data into the vector store
-                    self.response = here.ingest_deepdoc_job(job_id=job_id, job_data=job_data);
+                    self.response = here.ingest_job(job_id=job_id, job_data=job_data);
                 } except Exception as e {
                     self.logger.error(f"Error during ingestion: {str(e)}");
                     self.logger.error(traceback.format_exc());
@@ -63,12 +57,12 @@ walker deepdoc_callback :interact_graph_walker: {
                 }
             } else {
                 self.logger.error("DeepDoc job data is incomplete or missing");
-                here.delete_doc_job(job_id=job_id);
+                here.delete_job_entry(job_id=job_id);
                 self.response = False;
             }
         } else {
             self.logger.error(f"DeepDoc job failed with status: {status} - {error_message}");
-            here.delete_doc_job(job_id=job_id);
+            here.delete_job_entry(job_id=job_id);
             self.response = False;
         }
     }
