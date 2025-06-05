@@ -25,3 +25,7 @@
 
 ## 0.0.8
 - Refactored to store doc_manifest in memory collection
+
+## 0.0.9
+- Bugfix: page numbers not represented accurately on ingested chunks
+- Bugfix: migration now uses file interface for retrieving old file contents

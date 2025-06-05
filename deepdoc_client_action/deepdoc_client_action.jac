@@ -21,7 +21,7 @@ node DeepDocClientAction :Action: {
     static has logger:Logger = logging.getLogger(__name__);
 
     # api url to deepdoc service
-    has api_url:str = os.environ.get('DEEPDOC_API_URL', 'https://deepdoc.trueselph.com');
+    has api_url:str = os.environ.get('DEEPDOC_API_URL', '');
     has api_key:str = os.environ.get('DEEPDOC_API_KEY','api-key');
     has base_url:str = os.environ.get('JIVAS_BASE_URL', '');
     has vector_store_action:str = "TypesenseVectorStoreAction";
@@ -45,16 +45,29 @@ node DeepDocClientAction :Action: {
         #     bool: True if the service is healthy, False otherwise.
         # """
         if self.base_url == "" {
-            self.logger.error("Healthcheck for DeepDoc Client failed. Base URL is not set.");
-            return False;
+            return {
+                "status": False,
+                "message": "Base URL is not set.",
+                "severity": "error"
+            };
+        }
+        if self.api_url == "" {
+            return {
+                "status": False,
+                "message": "API URL is not set.",
+                "severity": "error"
+            };
         }
         try {
             response = requests.get(f"{self.api_url}/health");
             return response.status_code == 200;
         } except Exception as e {
-            self.logger.error(f"Healthcheck for DeepDoc Client failed. DeepDoc service is not reachable: {str(e)}");
             self.logger.error(traceback.format_exc());
-            return False;
+            return {
+                "status": False,
+                "message": f"DeepDoc service is not reachable: {str(e)}",
+                "severity": "error"
+            };
         }
     }
 
@@ -83,6 +96,11 @@ node DeepDocClientAction :Action: {
         # Returns:
         #     str: The job ID returned by the DeepDoc service.
         # """
+        if self.healthcheck() != True {
+            self.logger.error("Healthcheck for DeepDoc Client failed. Check your configuration.");
+            return "";
+        }
+
         try {
 
             # Prepare the payload for the request
@@ -361,6 +379,8 @@ node DeepDocClientAction :Action: {
         try {
             # set job_entry status to ingesting
             job_entry.set_status(ItemStatus.INGESTING);
+            # for storing processed raw page ranges to determine first and last page at the end
+            page_ranges = [];
             # Prepare texts and metadatas and ingest
             for result in results {
 
@@ -374,20 +394,12 @@ node DeepDocClientAction :Action: {
 
                 # Consolidate page numbers into a range string (e.g., "1-2")
                 page_numbers = metadata.get("page_num_int", []);
-                if page_numbers {
-                    unique_pages = sorted(set(page_numbers));
-                    if len(unique_pages) > 1 {
-                        consolidated_page = f"{unique_pages[0]}-{unique_pages[-1]}";
-                    } else {
-                        consolidated_page = str(unique_pages[0]);
-                    }
-                } else {
-                    consolidated_page = "1";
-                }
+                page_ranges.extend(page_numbers);
+                page_range = self.format_page_range(page_numbers);
 
                 filtered_metadata = {
                     "source": metadata.get("docnm_kwd", ""),
-                    "page": consolidated_page,
+                    "page": page_range,
                     "filename": metadata.get("original_filename", ""),
                     "job_id": job_id
                 };
@@ -400,14 +412,20 @@ node DeepDocClientAction :Action: {
 
                 # add any custom metadata to the filtered_metadata dict
                 doc_entry = job_entry.get_doc_entry_by_name(filtered_metadata["filename"]);
-                if doc_entry {
-                    # set doc entry status to ingesting
-                    doc_entry.set_status(ItemStatus.INGESTING);
-                    # filter out metadata keys that are not in the filtered_metadata
-                    filtered_metadata.update(doc_entry.get_metadata());
-                    # update the manifest entry with the consolidated metadata
-                    doc_entry.set_metadata(filtered_metadata);
+
+                if not doc_entry {
+                    self.logger.error(f"No document entry found for filename: {filtered_metadata['filename']}");
+                    continue;  # skip if no doc entry found for this filename
                 }
+
+                # set doc entry status to ingesting
+                doc_entry.set_status(ItemStatus.INGESTING);
+                # filter out metadata keys that are not in the filtered_metadata
+                filtered_metadata.update(doc_entry.get_metadata());
+                # set the current page range in metadata, it was reset by update above
+                filtered_metadata["page"] = page_range;
+                # update the manifest entry with the consolidated metadata
+                doc_entry.set_metadata(filtered_metadata);
 
                 if( isinstance(doc_entry, DocURLEntry) ) {
                     # if the file is a URL, update the source in metadata
@@ -415,7 +433,7 @@ node DeepDocClientAction :Action: {
                 } else {
                     # compose the path to file and update source
                     srv_filename = f"{job_id}_{self.format_filename(filtered_metadata['filename'])}";
-                    srv_source = self.get_file_url(srv_filename);
+                    srv_source = self.get_short_file_url(srv_filename);
                     if srv_source {
                         filtered_metadata["source"] = srv_source;
                     } else {
@@ -441,6 +459,12 @@ node DeepDocClientAction :Action: {
             if doc_entry {
                 # set the last doc entry status to completed
                 doc_entry.set_status(ItemStatus.COMPLETED);
+                # update the metadata with the page range for the document
+                if page_ranges {
+                    # format the page range and update the doc entry metadata
+                    document_page_range = self.format_page_range(page_ranges);
+                    doc_entry.add_metadata("page", document_page_range);
+                }
             }
             # set job_entry status to completed
             job_entry.set_status(ItemStatus.COMPLETED);
@@ -458,6 +482,49 @@ node DeepDocClientAction :Action: {
             }
             return False;
         }
+    }
+
+    can format_page_range(page_list:list[int]) -> str {
+        # takes a list of page numbers for chunks and returns a string representing the range
+
+        if not page_list {
+            return "1";
+        }
+
+        # Remove duplicates and sort
+        unique_pages = sorted(list(set(page_list)));
+
+        if len(unique_pages) == 1 {
+            return str(unique_pages[0]);
+        }
+
+        # Group consecutive pages
+        ranges = [];
+        start = unique_pages[0];
+        prev = start;
+
+        for num in unique_pages[1:] {
+            if num == prev + 1 {
+                prev = num;
+            } else {
+                ranges.append([start, prev]);
+                start = num;
+                prev = num;
+            }
+        }
+        ranges.append([start, prev]);
+
+        # Format the ranges
+        range_strings = [];
+        for r in ranges {
+            if r[0] == r[1] {
+                range_strings.append(str(r[0]));
+            } else {
+                range_strings.append(f"{r[0]}-{r[1]}");
+            }
+        }
+
+        return ", ".join(range_strings);
     }
 
     can generate_callback_url(walker_name:str) -> str {
@@ -701,12 +768,15 @@ node DeepDocClientAction :Action: {
                                 if entry["file_path"].startswith("http://") or entry["file_path"].startswith("https://") {
 
                                     output_filename = f"{job_id}_{self.format_filename(entry['filename'])}";
-                                    # Download the file content
-                                    response = requests.get(entry["file_path"]);
-                                    # If download is successful
-                                    if response.status_code == 200 {
+
+                                    # get the old file content
+                                    output_file_path = f"ddc/{output_filename}";
+                                    file_contents = file_interface.get_file(output_file_path);
+
+                                    # If retrieval is successful
+                                    if file_contents {
                                         # Save the file to local storage
-                                        self.save_file(output_filename, response.content);
+                                        self.save_file(output_filename, file_contents);
                                         # Get the local file URL/path
                                         updated_source = self.get_short_file_url(output_filename);
                                         metadata = entry.get("metadata", {});
@@ -741,7 +811,6 @@ node DeepDocClientAction :Action: {
                                         self.logger.info(f"File {entry['filename']} successfully migrated.");
 
                                         # delete the old file entry from the manifest, with recreated old filename
-                                        output_file_path = f"ddc/{output_filename}";
                                         file_interface.delete_file(output_file_path);
                                     } else {
                                         # Log an error if the file could not be downloaded
