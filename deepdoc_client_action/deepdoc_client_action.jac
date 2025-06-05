@@ -412,7 +412,7 @@ node DeepDocClientAction :Action: {
 
                 # add any custom metadata to the filtered_metadata dict
                 doc_entry = job_entry.get_doc_entry_by_name(filtered_metadata["filename"]);
-                
+
                 if not doc_entry {
                     self.logger.error(f"No document entry found for filename: {filtered_metadata['filename']}");
                     continue;  # skip if no doc entry found for this filename
@@ -426,7 +426,7 @@ node DeepDocClientAction :Action: {
                 filtered_metadata["page"] = page_range;
                 # update the manifest entry with the consolidated metadata
                 doc_entry.set_metadata(filtered_metadata);
-                
+
                 if( isinstance(doc_entry, DocURLEntry) ) {
                     # if the file is a URL, update the source in metadata
                     filtered_metadata["source"] = doc_entry.get_source();
@@ -490,19 +490,19 @@ node DeepDocClientAction :Action: {
         if not page_list {
             return "1";
         }
-        
+
         # Remove duplicates and sort
         unique_pages = sorted(list(set(page_list)));
-        
+
         if len(unique_pages) == 1 {
             return str(unique_pages[0]);
         }
-        
+
         # Group consecutive pages
         ranges = [];
         start = unique_pages[0];
         prev = start;
-        
+
         for num in unique_pages[1:] {
             if num == prev + 1 {
                 prev = num;
@@ -513,7 +513,7 @@ node DeepDocClientAction :Action: {
             }
         }
         ranges.append([start, prev]);
-        
+
         # Format the ranges
         range_strings = [];
         for r in ranges {
@@ -523,7 +523,7 @@ node DeepDocClientAction :Action: {
                 range_strings.append(f"{r[0]}-{r[1]}");
             }
         }
-        
+
         return ", ".join(range_strings);
     }
 
@@ -768,11 +768,11 @@ node DeepDocClientAction :Action: {
                                 if entry["file_path"].startswith("http://") or entry["file_path"].startswith("https://") {
 
                                     output_filename = f"{job_id}_{self.format_filename(entry['filename'])}";
-                                    
+
                                     # get the old file content
                                     output_file_path = f"ddc/{output_filename}";
                                     file_contents = file_interface.get_file(output_file_path);
-                                    
+
                                     # If retrieval is successful
                                     if file_contents {
                                         # Save the file to local storage
