@@ -178,16 +178,22 @@ node DeepDocClientAction :Action: {
             if "job_id" in response_data {
 
                 job_id = response_data["job_id"];
-                # grab action collection
-                collection = self.get_collection();
-                # create the job entry node
-                job_entry = JobEntry(
-                    job_id = job_id,
-                    status = ItemStatus.PROCESSING
-                );
-                # attach the job_entry node to collection
-                collection ++> job_entry;
+                            
+                # create or retrieve the job entry node
+                job_entry = self.get_job_entry(job_id=job_id);
 
+                if(not job_entry) {
+                    # grab action collection
+                    collection = self.get_collection(); 
+                    # create a new job entry node
+                    job_entry = JobEntry(job_id = job_id);
+                     # attach the job_entry node to collection
+                    collection ++> job_entry;
+                }
+                
+                # set the job entry status to processing
+                job_entry.set_status(ItemStatus.PROCESSING);
+            
                 if(files_data) {
 
                     # if files are in play, we archive the uploaded file(s) as under job_id in the doc_manifest
@@ -203,7 +209,10 @@ node DeepDocClientAction :Action: {
                         self.save_file(output_filename, file_content);
                         # retrieve short file url
                         source = self.get_short_file_url(f"{output_filename}");
-
+                        # update metadata
+                        metadata["source"] = source;
+                        metadata["filename"] = name;
+                        metadata["job_id"] = job_id;
                         job_entry.add_doc_file_entry(
                           name = name,
                           source = source,
@@ -217,7 +226,10 @@ node DeepDocClientAction :Action: {
                     # if urls are in play, we archive the uploaded file(s) as under job_id in the doc_manifest
                     for (index, url) in enumerate(urls) {
                         metadata = metadatas[index] if metadatas and index < len(metadatas) else {};
-
+                        # update metadata
+                        metadata["source"] = url;
+                        metadata["filename"] = url.split("/")[-1];
+                        metadata["job_id"] = job_id;
                         job_entry.add_doc_url_entry(
                             url = url,
                             metadata = metadata
@@ -304,8 +316,6 @@ node DeepDocClientAction :Action: {
                 doc_entries = job_entry.get_doc_entries();
                 if doc_entries {
                     for doc_entry in doc_entries {
-                        # remove the document entry
-                        # self.delete_doc_entry(job_id=job_id, doc_id=doc_entry.id);
                         # set the doc entry status to cancelled
                         doc_entry.set_status(ItemStatus.CANCELLED);
                     }
@@ -398,7 +408,6 @@ node DeepDocClientAction :Action: {
                 page_range = self.format_page_range(page_numbers);
 
                 filtered_metadata = {
-                    "source": metadata.get("docnm_kwd", ""),
                     "page": page_range,
                     "filename": metadata.get("original_filename", ""),
                     "job_id": job_id
@@ -412,36 +421,22 @@ node DeepDocClientAction :Action: {
 
                 # add any custom metadata to the filtered_metadata dict
                 doc_entry = job_entry.get_doc_entry_by_name(filtered_metadata["filename"]);
-
+                
                 if not doc_entry {
                     self.logger.error(f"No document entry found for filename: {filtered_metadata['filename']}");
                     continue;  # skip if no doc entry found for this filename
                 }
-
+                # update the manifest entry with the consolidated metadata
+                doc_entry.add_metadata("filename", filtered_metadata["filename"]);
                 # set doc entry status to ingesting
                 doc_entry.set_status(ItemStatus.INGESTING);
                 # filter out metadata keys that are not in the filtered_metadata
                 filtered_metadata.update(doc_entry.get_metadata());
                 # set the current page range in metadata, it was reset by update above
                 filtered_metadata["page"] = page_range;
-                # update the manifest entry with the consolidated metadata
-                doc_entry.set_metadata(filtered_metadata);
-
-                if( isinstance(doc_entry, DocURLEntry) ) {
-                    # if the file is a URL, update the source in metadata
-                    filtered_metadata["source"] = doc_entry.get_source();
-                } else {
-                    # compose the path to file and update source
-                    srv_filename = f"{job_id}_{self.format_filename(filtered_metadata['filename'])}";
-                    srv_source = self.get_short_file_url(srv_filename);
-                    if srv_source {
-                        filtered_metadata["source"] = srv_source;
-                    } else {
-                        self.logger.error(f"Unable to get file source url for {filtered_metadata['filename']}, setting source to {filtered_metadata['filename']}");
-                        filtered_metadata["source"] = filtered_metadata["filename"];
-                    }
-                }
-
+                # add the source to the filtered metadata
+                filtered_metadata["source"] = doc_entry.get_source();
+                
                 ids = vector_store_action.add_texts(
                     texts=[text],
                     metadatas=[filtered_metadata],
@@ -490,19 +485,19 @@ node DeepDocClientAction :Action: {
         if not page_list {
             return "1";
         }
-
+        
         # Remove duplicates and sort
         unique_pages = sorted(list(set(page_list)));
-
+        
         if len(unique_pages) == 1 {
             return str(unique_pages[0]);
         }
-
+        
         # Group consecutive pages
         ranges = [];
         start = unique_pages[0];
         prev = start;
-
+        
         for num in unique_pages[1:] {
             if num == prev + 1 {
                 prev = num;
@@ -513,7 +508,7 @@ node DeepDocClientAction :Action: {
             }
         }
         ranges.append([start, prev]);
-
+        
         # Format the ranges
         range_strings = [];
         for r in ranges {
@@ -523,7 +518,7 @@ node DeepDocClientAction :Action: {
                 range_strings.append(f"{r[0]}-{r[1]}");
             }
         }
-
+        
         return ", ".join(range_strings);
     }
 
@@ -768,11 +763,11 @@ node DeepDocClientAction :Action: {
                                 if entry["file_path"].startswith("http://") or entry["file_path"].startswith("https://") {
 
                                     output_filename = f"{job_id}_{self.format_filename(entry['filename'])}";
-
+                                    
                                     # get the old file content
                                     output_file_path = f"ddc/{output_filename}";
                                     file_contents = file_interface.get_file(output_file_path);
-
+                                    
                                     # If retrieval is successful
                                     if file_contents {
                                         # Save the file to local storage
