@@ -33,3 +33,6 @@
 ## 0.0.10
 - Bugfix: fixed generation of new shortened url for each ingested chunk
 - Bugfix: added safeguard against creating multiple job entries with same job_id
+
+## 0.0.11
+- Updated for compatibility with JIVAS alpha.51 which introduces add_texts_with_embeddings under VectorStoreAction

@@ -2,6 +2,7 @@ import:py os;
 import:py requests;
 import:py logging;
 import:py traceback;
+import:py from collections { defaultdict }
 import:py from logging { Logger }
 import:jac from jivas.agent.action.action { Action }
 import:py from jvserve.lib.agent_interface { AgentInterface }
@@ -78,6 +79,7 @@ node DeepDocClientAction :Action: {
         from_page:int=0,
         to_page:int=100000,
         lang:str="english",
+        with_embeddings:bool=False,
         callback_url:str=""
     ) -> str {
 
@@ -107,7 +109,8 @@ node DeepDocClientAction :Action: {
             payload = {
                 "from_page": from_page,
                 "to_page": to_page,
-                "lang": lang
+                "lang": lang,
+                "with_embeddings": with_embeddings,  # default to False, can be overridden
             };
 
             # Include the callback URL if provided
@@ -346,7 +349,7 @@ node DeepDocClientAction :Action: {
         #     bool: True if the import was successful, False otherwise.
         # """
 
-        # Ensure the job status is completed
+        # Validate job status
         if job_data.get("status") == "error" {
             self.logger.error(f"Unable to ingest failed job data");
             job_entry = self.get_job_entry(job_id=job_id);
@@ -359,7 +362,7 @@ node DeepDocClientAction :Action: {
             return False;
         }
 
-        # Extract the result field from the job data
+        # Extract results
         results = job_data.get("result", []);
         if not results {
             self.logger.error("No results found in job data.");
@@ -368,7 +371,7 @@ node DeepDocClientAction :Action: {
             return False;
         }
 
-        # Get the vector store action and ingest the texts
+        # Get vector store action
         vector_store_action = self.get_agent().get_action(action_label=self.vector_store_action);
         if not vector_store_action {
             self.logger.error(f"Vector store action '{self.vector_store_action}' not found.");
@@ -377,104 +380,134 @@ node DeepDocClientAction :Action: {
             return False;
         }
 
-        doc_entry = None;
-        # grab the job in question
+        # Get job entry
         job_entry = self.get_job_entry(job_id=job_id);
-
         if not job_entry {
             self.logger.error(f"Job entry '{job_id}' not found.");
             return False;
         }
 
         try {
-            # set job_entry status to ingesting
             job_entry.set_status(ItemStatus.INGESTING);
-            # for storing processed raw page ranges to determine first and last page at the end
-            page_ranges = [];
-            # Prepare texts and metadatas and ingest
+            success = True;
+
+            # Group results by document filename
+            documents = defaultdict(list);
             for result in results {
-
-                text = result.get("text", "");
-                metadata = result.get("metadata", {});
-
-                if(text == "") {
-                    self.logger.error(f"Empty text in result: {result}");
-                    continue;
-                }
-
-                # Consolidate page numbers into a range string (e.g., "1-2")
-                page_numbers = metadata.get("page_num_int", []);
-                page_ranges.extend(page_numbers);
-                page_range = self.format_page_range(page_numbers);
-
-                filtered_metadata = {
-                    "page": page_range,
-                    "filename": metadata.get("original_filename", ""),
-                    "job_id": job_id
-                };
-
-                # if there's a previous doc entry that completed, set the status to completed
-                if doc_entry {
-                    # set the previous doc entry status to completed
-                    doc_entry.set_status(ItemStatus.COMPLETED);
-                }
-
-                # add any custom metadata to the filtered_metadata dict
-                doc_entry = job_entry.get_doc_entry_by_name(filtered_metadata["filename"]);
-
-                if not doc_entry {
-                    self.logger.error(f"No document entry found for filename: {filtered_metadata['filename']}");
-                    continue;  # skip if no doc entry found for this filename
-                }
-                # update the manifest entry with the consolidated metadata
-                doc_entry.add_metadata("filename", filtered_metadata["filename"]);
-                # set doc entry status to ingesting
-                doc_entry.set_status(ItemStatus.INGESTING);
-                # filter out metadata keys that are not in the filtered_metadata
-                filtered_metadata.update(doc_entry.get_metadata());
-                # set the current page range in metadata, it was reset by update above
-                filtered_metadata["page"] = page_range;
-                # add the source to the filtered metadata
-                filtered_metadata["source"] = doc_entry.get_source();
-
-                ids = vector_store_action.add_texts(
-                    texts=[text],
-                    metadatas=[filtered_metadata],
-                    ids=[result.get("id") or f"doc_{os.urandom(8).hex()}"]
-                );
-
-                if(ids) {
-                    chunk_id = ids[0];
-                    # update the manifest with the chunk ID for this document
-                    doc_entry.add_chunk_id(chunk_id);
-                    # log the chunk ID and metadata
-                    self.logger.info(f"{chunk_id} added to vector store with metadata: {filtered_metadata}");
-                }
+                filename = result.get("metadata", {}).get("original_filename", "");
+                documents[filename].append(result);
             }
-            if doc_entry {
-                # set the last doc entry status to completed
-                doc_entry.set_status(ItemStatus.COMPLETED);
-                # update the metadata with the page range for the document
-                if page_ranges {
-                    # format the page range and update the doc entry metadata
-                    document_page_range = self.format_page_range(page_ranges);
-                    doc_entry.add_metadata("page", document_page_range);
-                }
-            }
-            # set job_entry status to completed
-            job_entry.set_status(ItemStatus.COMPLETED);
 
-            return True;
+            # Process each document in batch
+            for (filename, doc_results) in documents.items() {
+                doc_success = False;
+                try {
+                    # Get document entry
+                    doc_entry = job_entry.get_doc_entry_by_name(filename);
+                    if not doc_entry {
+                        self.logger.error(f"No document entry found for filename: {filename}");
+                        success = False;
+                        continue;
+                    }
+                    self.logger.info(f"Ingesting document: {filename} with {len(doc_results)} chunks.");
+                    doc_entry.set_status(ItemStatus.INGESTING);
+                    doc_metadata = doc_entry.get_metadata();
+                    doc_metadata.update({
+                        "filename": filename,
+                        "source": doc_entry.get_source(),
+                        "job_id": job_id
+                    });
+
+                    # Prepare batch data
+                    ids = [];
+                    chunk_ids = [];
+                    texts = [];
+                    metadatas = [];
+                    embeddings = [];
+                    page_numbers = [];
+
+                    for result in doc_results {
+                        text = result.get("text", "");
+                        if not text {
+                            self.logger.error(f"Empty text in result: {result}");
+                            continue;
+                        }
+
+                        # Process page numbers
+                        result_page_nums = result.get("metadata", {}).get("page_num_int", []);
+                        page_numbers.extend(result_page_nums);
+
+                        # Prepare chunk metadata
+                        chunk_metadata = doc_metadata.copy();
+                        chunk_metadata["page"] = self.format_page_range(result_page_nums);
+
+                        # Add to batch
+                        texts.append(text);
+                        metadatas.append(chunk_metadata);
+                        ids.append(result.get("id") or f"doc_{os.urandom(8).hex()}");
+
+                        # add embeddings to batch if available
+                        if "embeddings" in result {
+                            embeddings.append(result.get("embeddings", []));
+                        }
+                    }
+
+                    # Ingest batch
+                    if texts {
+
+                        if embeddings {
+                            # Add texts with embeddings
+                            chunk_ids = vector_store_action.add_texts_with_embeddings(
+                                texts=texts,
+                                metadatas=metadatas,
+                                ids=ids,
+                                embeddings=embeddings
+                            );
+
+                        } else {
+                            # Add texts without embeddings
+                            chunk_ids = vector_store_action.add_texts(
+                                texts=texts,
+                                metadatas=metadatas,
+                                ids=ids
+                            );
+                        }
+
+                        if not chunk_ids {
+                            self.logger.error(f"Failed to add texts to vector store for document: {filename}");
+                            success = False;
+                            continue;
+                        }
+
+                        # Update document with chunk IDs
+                        for chunk_id in chunk_ids {
+                            doc_entry.add_chunk_id(chunk_id);
+                        }
+
+                        # Update document page range
+                        if page_numbers {
+                            doc_entry.add_metadata("page", self.format_page_range(page_numbers));
+                        }
+
+                        doc_success = True;
+                    }
+                } except Exception as e {
+                    self.logger.error(f"Document processing failed ({filename}): {str(e)}");
+                    self.logger.error(traceback.format_exc());
+                    success = False;
+                } finally {
+                    doc_entry.set_status(ItemStatus.COMPLETED if doc_success else ItemStatus.FAILED);
+                }
+
+            }
+            # Finalize job status
+            job_entry.set_status(ItemStatus.COMPLETED if success else ItemStatus.FAILED);
+            return success;
 
         } except Exception as e {
             self.logger.error(f"Exception occurred while importing job data: {str(e)}");
             self.logger.error(traceback.format_exc());
-            # set job_entry status to failed
             job_entry.set_status(ItemStatus.FAILED);
-            # set the current doc_entry status to failed if it exists
-            if doc_entry {
-                doc_entry.set_status(ItemStatus.FAILED);
-            }
             return False;
         }
     }

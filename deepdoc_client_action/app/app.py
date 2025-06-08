@@ -22,6 +22,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
     # add documents section
     with st.expander("Configure", False):
+
         # add a field for API URL
         st.session_state[model_key]["api_url"] = st.text_input(
             "API URL",
@@ -51,6 +52,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             help="Enter the vector store action name",
             key="vector_store_action",
         )
+
         # Add update button to apply changes
         app_update_action(agent_id, action_id)
 
@@ -100,6 +102,13 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             help="Specify the language of the documents",
             key=f"{model_key}_lang",
         )
+        # add a field for the vector store action
+        with_embeddings = st.toggle(
+            "Process with Embeddings",
+            key="with_embeddings",
+            help="Toggle on if you want to process documents with embeddings",
+            value=True,
+        )
 
         # Process inputs
         url_list = [url.strip() for url in doc_urls.split("\n") if url.strip()]
@@ -128,6 +137,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 "from_page": from_page,
                 "to_page": to_page,
                 "lang": lang,
+                "with_embeddings": with_embeddings,
             }
 
             # Prepare files list (if any)
@@ -490,9 +500,9 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         else:
                             st.text("Processing")
 
-            # Auto-refresh every 3 seconds if any documents are processing
+            # Auto-refresh every 5 seconds if any documents are processing
             if any_processing:
-                time.sleep(3)
+                time.sleep(5)
                 st.rerun()
 
         else:
