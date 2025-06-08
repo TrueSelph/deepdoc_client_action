@@ -16,6 +16,7 @@ walker add_documents :interact_graph_walker: {
     has from_page:int = 0;
     has to_page:int = 100000;
     has lang:str = "english";
+    has with_embeddings:bool = False;  # whether to generate embeddings for the documents
     has response:str = "";
 
     # set up logger
@@ -54,6 +55,7 @@ walker add_documents :interact_graph_walker: {
             from_page=self.from_page,
             to_page=self.to_page,
             lang=self.lang,
+            with_embeddings=self.with_embeddings,
             callback_url=callback_url
         );
     }
