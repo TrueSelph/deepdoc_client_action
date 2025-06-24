@@ -216,12 +216,15 @@ node DeepDocClientAction :Action: {
                         metadata["source"] = source;
                         metadata["filename"] = name;
                         metadata["job_id"] = job_id;
-                        job_entry.add_doc_file_entry(
+                        if job_entry.add_doc_file_entry(
                           name = name,
                           source = source,
                           mimetype = mimetype,
                           metadata = metadata
-                        );
+                        ) {
+                            # increment the doc_count
+                            self.increment_doc_count();
+                        }
                     }
                 }
 
@@ -233,10 +236,13 @@ node DeepDocClientAction :Action: {
                         metadata["source"] = url;
                         metadata["filename"] = url.split("/")[-1];
                         metadata["job_id"] = job_id;
-                        job_entry.add_doc_url_entry(
+                        if job_entry.add_doc_url_entry(
                             url = url,
                             metadata = metadata
-                        );
+                        ) {
+                            # increment the doc_count
+                            self.increment_doc_count();
+                        }
                     }
                 }
 
@@ -586,11 +592,13 @@ node DeepDocClientAction :Action: {
         # Lists all document entries in the manifest with pagination.
 
         collection = self.get_collection();
-        result = collection spawn _list_doc_entries(page=page, limit=limit);
+        result = collection spawn _list_doc_entries(page=page, limit=limit, total_items=self.get_doc_count());
         if not result {
             self.logger.error("No document entries found in the manifest.");
             return {};
         }
+        # update total items
+        self.set_doc_count(result.total_items);
         return {
             "page": result.page,
             "limit": result.limit,
@@ -652,9 +660,13 @@ node DeepDocClientAction :Action: {
         # remove any vector strore entries associated with the file
         self.remove_doc_vector_store_entries(job_id=job_id, doc_id=doc_id);
         # finally remove the doc entry from the job.. and the entire job if it's the last entry
-        job_entry.delete_doc_entry(doc_id);
+        if job_entry.delete_doc_entry(doc_id) {
+            # decrement the doc_count
+            self.decrement_doc_count();
+            return True;
+        }
 
-        return True;
+        return False;
     }
 
     can delete_job_entry(job_id:str) -> bool {
@@ -676,6 +688,7 @@ node DeepDocClientAction :Action: {
             job_entry.delete();
             return True;  # Nothing to remove, so return success
         }
+
         for doc_entry in doc_entries {
             # remove the document entry
             self.delete_doc_entry(job_id=job_id, doc_id=doc_entry.id);
@@ -728,6 +741,40 @@ node DeepDocClientAction :Action: {
         }
 
         return success;
+    }
+
+    can get_doc_count() -> int {
+        collection = self.get_collection();
+        return collection.get_data_item('doc_count') or 0;
+    }
+
+    can set_doc_count(amount:int) {
+        collection = self.get_collection();
+        collection.set_data_item('doc_count', amount);
+    }
+
+    can increment_doc_count(amount:int=1) -> int {
+        # Increment the doc_count by the specified amount (default 1).
+        collection = self.get_collection();
+        if amount < 0 {
+            return self.get_doc_count();
+        }
+
+        doc_count = self.get_doc_count() + 1;
+        collection.set_data_item('doc_count', doc_count);
+
+        return doc_count;
+    }
+
+    can decrement_doc_count(amount:int=1) -> int {
+        # Decrement the doc_count by the specified amount (default 1), but never below zero.
+        collection = self.get_collection();
+        if amount < 0 {
+            return self.get_doc_count();
+        }
+        doc_count = max(self.get_doc_count() - amount, 0);
+        collection.set_data_item('doc_count', doc_count);
+        return doc_count;
     }
 
     can format_filename(filename:str) -> str {
@@ -917,12 +964,14 @@ walker _list_doc_entries {
     }
 
     can on_collection with Collection entry {
-        # First, count total doc entries
-        self.total_items = 0;
+
         job_entries = [-->](`?JobEntry);
 
-        for job in job_entries {
-            self.total_items += len(job.get_doc_entries());
+        if self.total_items == 0 {
+            # Count total doc entries if we need to
+            for job in job_entries {
+                self.total_items += len(job.get_doc_entries());
+            }
         }
 
         # Calculate offset based on page and limit

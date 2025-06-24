@@ -36,3 +36,6 @@
 
 ## 0.0.11
 - Updated for compatibility with JIVAS alpha.51 which introduces add_texts_with_embeddings under VectorStoreAction
+
+## 0.0.12
+- Added tracked doc count for more optimal paging
