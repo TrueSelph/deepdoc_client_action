@@ -632,7 +632,7 @@ node DeepDocClientAction(Action) {
 
     def delete_doc_entry(job_id:str, doc_id:str) -> bool {
         # Deletes a specific entry from the document manifest for a given job ID.
-        # set manifesrt_only to True to delete the entry from the manifest only and not the file system
+        # set manifest_only to True to delete the entry from the manifest only and not the file system
 
         job_entry = self.get_job_entry(job_id=job_id);
 
@@ -657,7 +657,7 @@ node DeepDocClientAction(Action) {
             }
         }
 
-        # remove any vector strore entries associated with the file
+        # remove any vector store entries associated with the file
         self.remove_doc_vector_store_entries(job_id=job_id, doc_id=doc_id);
         # finally remove the doc entry from the job.. and the entire job if it's the last entry
         if job_entry.delete_doc_entry(doc_id) {
