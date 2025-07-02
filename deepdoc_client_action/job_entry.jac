@@ -1,12 +1,14 @@
-import:py from datetime { datetime, timezone }
-import:jac from jivas.agent.core.graph_node { GraphNode }
-import:jac from actions.jivas.deepdoc_client_action.doc_entry { DocEntry }
-import:jac from actions.jivas.deepdoc_client_action.doc_file_entry { DocFileEntry }
-import:jac from actions.jivas.deepdoc_client_action.doc_url_entry { DocURLEntry }
-import:jac from actions.jivas.deepdoc_client_action.item_status { ItemStatus }
-import:py from jivas.agent.modules.agentlib.utils { Utils }
+import from datetime { datetime, timezone }
+import from jivas.agent.core.graph_node { GraphNode }
+import from actions.jivas.deepdoc_client_action.doc_entry { DocEntry }
+import from actions.jivas.deepdoc_client_action.doc_file_entry { DocFileEntry }
+import from actions.jivas.deepdoc_client_action.doc_url_entry { DocURLEntry }
+import from actions.jivas.deepdoc_client_action.item_status { ItemStatus }
+import from jivas.agent.modules.agentlib.utils { Utils }
+import from jac_cloud.plugin.jaseci { JacPlugin as Jac }
 
-node JobEntry :GraphNode: {
+
+node JobEntry(GraphNode) {
     # represents a deepdoc job
     has job_id:str = "";
     has status:ItemStatus = ItemStatus.PENDING;
@@ -14,11 +16,11 @@ node JobEntry :GraphNode: {
     has completed_on:str = "";
     has messages:list = [];
 
-    can get_status() -> ItemStatus {
+    def get_status() -> ItemStatus {
         return self.status;
     }
 
-    can set_status(status:ItemStatus) -> None {
+    def set_status(status:ItemStatus) -> None {
         # timestamp completed on
         if status in [ItemStatus.COMPLETED, ItemStatus.FAILED, ItemStatus.CANCELLED] {
             self.completed_on = str((datetime.now(timezone.utc)).isoformat());
@@ -26,19 +28,19 @@ node JobEntry :GraphNode: {
         self.status = status;
     }
 
-    can add_message(message:str) -> None {
+    def add_message(message:str) -> None {
         self.messages.append(message);
     }
 
-    can get_job_id() -> str {
+    def get_job_id() -> str {
         return self.job_id;
     }
 
-    can set_job_id(job_id:str) -> None {
+    def set_job_id(job_id:str) -> None {
         self.job_id = job_id;
     }
 
-    can add_doc_url_entry(url:str, metadata:dict={}) -> DocEntry {
+    def add_doc_url_entry(url:str, metadata:dict={}) -> DocEntry {
         # adds a doc url entry to this job entry
 
         if not url {
@@ -60,7 +62,7 @@ node JobEntry :GraphNode: {
         return doc_url_entry;
     }
 
-    can add_doc_file_entry(name:str, source:str, mimetype:str="", metadata:dict={}) -> DocEntry {
+    def add_doc_file_entry(name:str, source:str, mimetype:str="", metadata:dict={}) -> DocEntry {
         # adds a doc url entry to this job entry
 
         if not name {
@@ -83,22 +85,22 @@ node JobEntry :GraphNode: {
         return doc_file_entry;
     }
 
-    can get_doc_entries() -> list {
+    def get_doc_entries() -> list {
         # retrieves a list of doc entries
         return [-->](`?DocEntry);
     }
 
-    can get_doc_entry(id:str) -> DocEntry {
+    def get_doc_entry(id:str) -> DocEntry {
         # retrieves an attached document entry by id
         return Utils.node_obj([-->](`?DocEntry)(?id == id));
     }
 
-    can get_doc_entry_by_name(name:str) -> DocEntry {
+    def get_doc_entry_by_name(name:str) -> DocEntry {
         # retrieves an attached document entry by id
         return Utils.node_obj([-->](`?DocEntry)(?name == name));
     }
 
-    can delete_doc_entry(id:str) -> bool {
+    def delete_doc_entry(id:str) -> bool {
         # removes an attached document entry by id
         doc_entry = Utils.node_obj([-->](`?DocEntry)(?id == id));
         if not doc_entry {
@@ -112,7 +114,7 @@ node JobEntry :GraphNode: {
         return True;
     }
 
-    can delete() -> list {
+    def delete() -> list {
         return (self spawn _purge_job()).removed;
     }
 

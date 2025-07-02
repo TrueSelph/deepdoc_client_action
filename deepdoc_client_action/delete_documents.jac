@@ -1,13 +1,13 @@
-import:py logging;
-import:py traceback;
-import:py from logging { Logger }
-import:jac from jivas.agent.core.agent { Agent }
-import:jac from jivas.agent.action.action { Action }
-import:jac from jivas.agent.action.actions { Actions }
-import:jac from jivas.agent.action.interact_graph_walker { interact_graph_walker }
+import logging;
+import from logging { Logger }
+import from jivas.agent.core.agent { Agent }
+import from jivas.agent.action.action { Action }
+import from jivas.agent.action.actions { Actions }
+import from jivas.agent.action.interact_graph_walker { interact_graph_walker }
+import from jac_cloud.plugin.jaseci { JacPlugin as Jac }
 
 
-walker delete_documents :interact_graph_walker: {
+walker delete_documents(interact_graph_walker) {
     # action endpoint which removes documents from the vector store and deletes the local file system entries
 
     # a list of {job_id, filename} pairs for removal

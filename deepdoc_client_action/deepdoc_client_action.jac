@@ -1,21 +1,21 @@
-import:py os;
-import:py requests;
-import:py logging;
-import:py traceback;
-import:py from collections { defaultdict }
-import:py from logging { Logger }
-import:jac from jivas.agent.action.action { Action }
-import:py from jvserve.lib.agent_interface { AgentInterface }
-import:py from jvserve.lib.file_interface { file_interface }
-import:jac from jivas.agent.memory.collection { Collection }
-import:jac from actions.jivas.deepdoc_client_action.job_entry { JobEntry }
-import:jac from actions.jivas.deepdoc_client_action.doc_entry { DocEntry }
-import:jac from actions.jivas.deepdoc_client_action.doc_file_entry { DocFileEntry }
-import:jac from actions.jivas.deepdoc_client_action.doc_url_entry { DocURLEntry }
-import:jac from actions.jivas.deepdoc_client_action.item_status { ItemStatus }
+import os;
+import requests;
+import logging;
+import traceback;
+import from collections { defaultdict }
+import from logging { Logger }
+import from jivas.agent.action.action { Action }
+import from jvserve.lib.agent_interface { AgentInterface }
+import from jvserve.lib.file_interface { file_interface }
+import from jivas.agent.memory.collection { Collection }
+import from actions.jivas.deepdoc_client_action.job_entry { JobEntry }
+import from actions.jivas.deepdoc_client_action.doc_entry { DocEntry }
+import from actions.jivas.deepdoc_client_action.doc_file_entry { DocFileEntry }
+import from actions.jivas.deepdoc_client_action.doc_url_entry { DocURLEntry }
+import from actions.jivas.deepdoc_client_action.item_status { ItemStatus }
 
 
-node DeepDocClientAction :Action: {
+node DeepDocClientAction(Action) {
     # Integrates with DeepDoc OCR and document parsing services to ingest documents into a vector store
 
     # set up logger
@@ -28,7 +28,7 @@ node DeepDocClientAction :Action: {
     has vector_store_action:str = "TypesenseVectorStoreAction";
     has doc_manifest:dict = {}; # maintained for migrations
 
-    can on_register() -> None {
+    def on_register() -> None {
         # """
         # Registers the DeepDocClientAction with the agent's action collection.
         # executes any migration on older deepdoc manifest entries.
@@ -38,7 +38,7 @@ node DeepDocClientAction :Action: {
         self.migrate_manifest();
     }
 
-    can healthcheck() {
+    def healthcheck() {
         # """
         # Checks the health of the DeepDoc service by sending a GET request to the health endpoint.
 
@@ -72,7 +72,7 @@ node DeepDocClientAction :Action: {
         }
     }
 
-    can queue_job(
+    def queue_job(
         urls:list[str]=[],
         files:list[dict]=[],
         metadatas:list[dict]=[],
@@ -258,7 +258,7 @@ node DeepDocClientAction :Action: {
         }
     }
 
-    can get_job_status(job_id:str) -> dict {
+    def get_job_status(job_id:str) -> dict {
         # """
         # Retrieves the status of a queued job from the DeepDoc service.
 
@@ -295,7 +295,7 @@ node DeepDocClientAction :Action: {
         }
     }
 
-    can cancel_job(job_id:str) -> dict {
+    def cancel_job(job_id:str) -> dict {
         # """
         # Cancels a deepdoc job which is still in processing
 
@@ -344,7 +344,7 @@ node DeepDocClientAction :Action: {
         }
     }
 
-    can ingest_job(job_id:str, job_data:dict) -> bool {
+    def ingest_job(job_id:str, job_data:dict) -> bool {
         # """
         # Imports the results of a completed job into the vector store using add_texts.
 
@@ -518,7 +518,7 @@ node DeepDocClientAction :Action: {
         }
     }
 
-    can format_page_range(page_list:list[int]) -> str {
+    def format_page_range(page_list:list[int]) -> str {
         # takes a list of page numbers for chunks and returns a string representing the range
 
         if not page_list {
@@ -561,7 +561,7 @@ node DeepDocClientAction :Action: {
         return ", ".join(range_strings);
     }
 
-    can generate_callback_url(walker_name:str) -> str {
+    def generate_callback_url(walker_name:str) -> str {
         # setup procedure for webhook registration on deepdoc
 
         base_url = self.base_url;
@@ -583,12 +583,12 @@ node DeepDocClientAction :Action: {
         return callback_url;
     }
 
-    can get_job_entry(job_id:str) -> JobEntry {
+    def get_job_entry(job_id:str) -> JobEntry {
         collection = self.get_collection();
         return (collection spawn _get_job_entry(job_id=job_id)).job_entry;
     }
 
-    can list_doc_entries(page:int, limit:int) -> list[dict] {
+    def list_doc_entries(page:int, limit:int) -> list[dict] {
         # Lists all document entries in the manifest with pagination.
 
         collection = self.get_collection();
@@ -610,7 +610,7 @@ node DeepDocClientAction :Action: {
         };
     }
 
-    can get_doc_entry(job_id:str, doc_id:str) -> dict {
+    def get_doc_entry(job_id:str, doc_id:str) -> dict {
         # Returns the document manifest entry by id.
 
         job_entry = self.get_job_entry(job_id=job_id);
@@ -630,7 +630,7 @@ node DeepDocClientAction :Action: {
         return doc_entry.export();
     }
 
-    can delete_doc_entry(job_id:str, doc_id:str) -> bool {
+    def delete_doc_entry(job_id:str, doc_id:str) -> bool {
         # Deletes a specific entry from the document manifest for a given job ID.
         # set manifesrt_only to True to delete the entry from the manifest only and not the file system
 
@@ -669,7 +669,7 @@ node DeepDocClientAction :Action: {
         return False;
     }
 
-    can delete_job_entry(job_id:str) -> bool {
+    def delete_job_entry(job_id:str) -> bool {
         # Deletes all entries for a specific job ID from the document manifest and everywhere else.
 
         job_entry = self.get_job_entry(job_id=job_id);
@@ -697,7 +697,7 @@ node DeepDocClientAction :Action: {
         return True;  # Successfully removed all document entries for the job ID
     }
 
-    can remove_doc_vector_store_entries(job_id:str, doc_id:str) -> bool {
+    def remove_doc_vector_store_entries(job_id:str, doc_id:str) -> bool {
         # Removes all vector store entries associated with a specific document by ID.
         job_entry = self.get_job_entry(job_id=job_id);
 
@@ -743,17 +743,17 @@ node DeepDocClientAction :Action: {
         return success;
     }
 
-    can get_doc_count() -> int {
+    def get_doc_count() -> int {
         collection = self.get_collection();
         return collection.get_data_item('doc_count') or 0;
     }
 
-    can set_doc_count(amount:int) {
+    def set_doc_count(amount:int) {
         collection = self.get_collection();
         collection.set_data_item('doc_count', amount);
     }
 
-    can increment_doc_count(amount:int=1) -> int {
+    def increment_doc_count(amount:int=1) -> int {
         # Increment the doc_count by the specified amount (default 1).
         collection = self.get_collection();
         if amount < 0 {
@@ -766,7 +766,7 @@ node DeepDocClientAction :Action: {
         return doc_count;
     }
 
-    can decrement_doc_count(amount:int=1) -> int {
+    def decrement_doc_count(amount:int=1) -> int {
         # Decrement the doc_count by the specified amount (default 1), but never below zero.
         collection = self.get_collection();
         if amount < 0 {
@@ -777,7 +777,7 @@ node DeepDocClientAction :Action: {
         return doc_count;
     }
 
-    can format_filename(filename:str) -> str {
+    def format_filename(filename:str) -> str {
         # Formats the filename by removing spaces and slashes.
         # Returns the formatted filename.
 
@@ -792,7 +792,7 @@ node DeepDocClientAction :Action: {
         return formatted_filename;
     }
 
-    can migrate_manifest() -> None {
+    def migrate_manifest() -> None {
         # """
         # Migrates the old manifest entries to the new format.
         # This is a placeholder for future migration logic.

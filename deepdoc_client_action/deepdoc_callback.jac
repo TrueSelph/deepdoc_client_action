@@ -1,16 +1,17 @@
-import:py logging;
-import:py traceback;
-import:py from logging { Logger }
-import:jac from jivas.agent.core.agent { Agent }
-import:jac from jivas.agent.action.action { Action }
-import:jac from jivas.agent.action.actions { Actions }
-import:jac from jivas.agent.action.interact_graph_walker { interact_graph_walker }
+import logging;
+import traceback;
+import from logging { Logger }
+import from jivas.agent.core.agent { Agent }
+import from jivas.agent.action.action { Action }
+import from jivas.agent.action.actions { Actions }
+import from jivas.agent.action.interact_graph_walker { interact_graph_walker }
+import from jac_cloud.plugin.jaseci { JacPlugin as Jac }
 
 
-walker deepdoc_callback :interact_graph_walker: {
+walker deepdoc_callback(interact_graph_walker) {
     # action endpoint for handling the deepdoc callback routine which processes deepdoc job and ingests into vector_store
 
-    # beacuse this is a callback/webhook, we have to use the following params
+    # because this is a callback/webhook, we have to use the following params
     has headers:dict = {};
     # main param for incoming webhook data
     has params:dict = {};
