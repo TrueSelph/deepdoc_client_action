@@ -745,12 +745,12 @@ node DeepDocClientAction(Action) {
 
     def get_doc_count() -> int {
         collection = self.get_collection();
-        return collection.get_data_item('doc_count') or 0;
+        return collection.data_get('doc_count') or 0;
     }
 
     def set_doc_count(amount:int) {
         collection = self.get_collection();
-        collection.set_data_item('doc_count', amount);
+        collection.data_set('doc_count', amount);
     }
 
     def increment_doc_count(amount:int=1) -> int {
@@ -761,7 +761,7 @@ node DeepDocClientAction(Action) {
         }
 
         doc_count = self.get_doc_count() + 1;
-        collection.set_data_item('doc_count', doc_count);
+        collection.data_set('doc_count', doc_count);
 
         return doc_count;
     }
@@ -773,7 +773,7 @@ node DeepDocClientAction(Action) {
             return self.get_doc_count();
         }
         doc_count = max(self.get_doc_count() - amount, 0);
-        collection.set_data_item('doc_count', doc_count);
+        collection.data_set('doc_count', doc_count);
         return doc_count;
     }
 
