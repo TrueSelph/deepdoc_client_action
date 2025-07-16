@@ -1,7 +1,9 @@
-include:jac deepdoc_client_action;
-include:jac add_documents;
-include:jac delete_documents;
-include:jac cancel_job;
-include:jac list_documents;
-include:jac deepdoc_callback;
-include:jac delete_job;
+import from actions.jivas.deepdoc_client_action {
+    deepdoc_client_action,
+    add_documents,
+    delete_documents,
+    cancel_job,
+    list_documents,
+    deepdoc_callback,
+    delete_job
+}
