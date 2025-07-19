@@ -39,3 +39,6 @@
 
 ## 0.0.12
 - Added tracked doc count for more optimal paging
+
+## 0.0.13
+- Removed enumeration of job entries for list_documents to improve paging response
