@@ -5,7 +5,7 @@ import traceback;
 import from collections { defaultdict }
 import from logging { Logger }
 import from jivas.agent.action.action { Action }
-import from jvserve.lib.agent_interface { AgentInterface }
+import from jvserve.lib.agent_interface { encrypt_webhook_key_exec }
 import from jvserve.lib.file_interface { file_interface }
 import from jivas.agent.memory.collection { Collection }
 import from actions.jivas.deepdoc_client_action.job_entry { JobEntry }
@@ -570,11 +570,11 @@ node DeepDocClientAction(Action) {
         agent_id = self.get_agent().id;
         module_root = self.get_module_root();
         # generate webhook key
-        webhook_key = AgentInterface.encrypt_webhook_key(agent_id=agent_id, module_root=module_root, walker=walker_name);
+        webhook_key = encrypt_webhook_key_exec(agent_id=agent_id, module_root=module_root, walker=walker_name);
 
         if(base_url and webhook_key) {
             # complete the full webhook url
-            callback_url = f'{base_url}/webhook/{webhook_key}';
+            callback_url = f'{base_url}/action/webhook/{webhook_key}';
         } else {
             self.logger.error('unable to generate webhook url for DeepDoc Client, missing required parameters');
             return "";
