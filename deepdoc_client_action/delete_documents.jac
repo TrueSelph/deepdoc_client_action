@@ -13,6 +13,7 @@ walker delete_documents(agent_graph_walker) {
     # a list of {job_id, filename} pairs for removal
     has documents:list[dict] = [];
     has response:bool = False;
+    has reporting:bool = True;
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
@@ -60,6 +61,10 @@ walker delete_documents(agent_graph_walker) {
         self.response = success;
         # set the response status
         Jac.get_context().status = 200;
+
+        if self.reporting {
+            report self.response;
+        }
     }
 
 }

@@ -4,7 +4,9 @@ import from actions.jivas.deepdoc_client_action.doc_entry { DocEntry }
 import from actions.jivas.deepdoc_client_action.doc_file_entry { DocFileEntry }
 import from actions.jivas.deepdoc_client_action.doc_url_entry { DocURLEntry }
 import from actions.jivas.deepdoc_client_action.item_status { ItemStatus }
-import from jivas.agent.modules.agentlib.utils { Utils }
+
+import from jivas.agent.modules.system.common { node_obj }
+
 import from jac_cloud.plugin.jaseci { JacPlugin as Jac }
 
 
@@ -92,17 +94,17 @@ node JobEntry(GraphNode) {
 
     def get_doc_entry(id:str) -> DocEntry {
         # retrieves an attached document entry by id
-        return Utils.node_obj([-->](`?DocEntry)(?id == id));
+        return node_obj([-->](`?DocEntry)(?id == id));
     }
 
     def get_doc_entry_by_name(name:str) -> DocEntry {
         # retrieves an attached document entry by id
-        return Utils.node_obj([-->](`?DocEntry)(?name == name));
+        return node_obj([-->](`?DocEntry)(?name == name));
     }
 
     def delete_doc_entry(id:str) -> bool {
         # removes an attached document entry by id
-        doc_entry = Utils.node_obj([-->](`?DocEntry)(?id == id));
+        doc_entry = node_obj([-->](`?DocEntry)(?id == id));
         if not doc_entry {
             return False;
         }

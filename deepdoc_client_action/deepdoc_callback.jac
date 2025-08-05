@@ -17,6 +17,7 @@ walker deepdoc_callback(agent_graph_walker) {
     has params:dict = {};
     # main param for outgoing webhook data
     has response:bool = False;
+    has reporting:bool = True;
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
@@ -65,6 +66,10 @@ walker deepdoc_callback(agent_graph_walker) {
             self.logger.error(f"DeepDoc job failed with status: {status} - {error_message}");
             here.delete_job_entry(job_id=job_id);
             self.response = False;
+        }
+
+        if self.reporting {
+            report self.response;
         }
     }
 

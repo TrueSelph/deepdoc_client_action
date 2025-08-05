@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Dict
 
 import streamlit as st
-from jvclient.lib.utils import call_action_walker_exec
+from jvclient.lib.utils import call_api
 from jvclient.lib.widgets import app_header, app_update_action
 from streamlit_router import StreamlitRouter
 
@@ -132,6 +132,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
         if st.button("Upload", key=f"{model_key}_btn_queue_docs"):
             # Prepare the payload
             payload = {
+                "agent_id": agent_id,
                 "urls": url_list if url_list else [],
                 "metadatas": metadata_list if metadata_list else [],
                 "from_page": from_page,
@@ -149,8 +150,10 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     )
 
             # Call the parse_pdfs walker
-            result = call_action_walker_exec(
-                agent_id, module_root, "add_documents", payload, files
+            result = call_api(
+                endpoint="action/walker/deepdoc_client_action/add_documents",
+                json_data=payload,
+                files=files,
             )
 
             if result:
@@ -252,11 +255,14 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             st.session_state.per_page = per_page
 
         # Fetch documents with pagination parameters
-        args = {
-            "page": st.session_state.current_page,
-            "per_page": st.session_state.per_page,
-        }
-        result = call_action_walker_exec(agent_id, module_root, "list_documents", args)
+        result = call_api(
+            endpoint="action/walker/deepdoc_client_action/list_documents",
+            json_data={
+                "agent_id": agent_id,
+                "page": st.session_state.current_page,
+                "per_page": st.session_state.per_page,
+            },
+        )
 
         if result and "items" in result:
             document_list = result["items"]
@@ -335,10 +341,10 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         with col1:
                             if st.button("Yes, Cancel Job"):
                                 # Prepare arguments for cancellation
-                                args = {"job_id": job_id}
                                 # Call the cancel_documents walker
-                                cancel_result = call_action_walker_exec(
-                                    agent_id, module_root, "cancel_job", args
+                                cancel_result = call_api(
+                                    endpoint="action/walker/deepdoc_client_action/cancel_job",
+                                    json_data={"agent_id": agent_id, "job_id": job_id},
                                 )
                                 if cancel_result:
                                     st.session_state.current_page = 1
@@ -374,11 +380,10 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         col1, col2 = st.columns(2)
                         with col1:
                             if st.button("Yes, Delete Job"):
-                                # Prepare arguments for deletion
-                                args = {"job_id": job_id}
                                 # Call the delete_documents walker
-                                delete_result = call_action_walker_exec(
-                                    agent_id, module_root, "delete_job", args
+                                delete_result = call_api(
+                                    endpoint="action/walker/deepdoc_client_action/delete_job",
+                                    json_data={"agent_id": agent_id, "job_id": job_id},
                                 )
                                 if delete_result:
                                     st.session_state.current_page = 1
@@ -452,21 +457,18 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                                 col1, col2 = st.columns(2)
                                 with col1:
                                     if st.button("Yes"):
-                                        # Prepare arguments for deletion
-                                        args = {
-                                            "documents": [
-                                                {
-                                                    "job_id": job_id,
-                                                    "doc_id": document["id"],
-                                                }
-                                            ]
-                                        }
                                         # Call the delete_documents walker
-                                        delete_result = call_action_walker_exec(
-                                            agent_id,
-                                            module_root,
-                                            "delete_documents",
-                                            args,
+                                        delete_result = call_api(
+                                            endpoint="action/walker/deepdoc_client_action/delete_documents",
+                                            json_data={
+                                                "agent_id": agent_id,
+                                                "documents": [
+                                                    {
+                                                        "job_id": job_id,
+                                                        "doc_id": document["id"],
+                                                    }
+                                                ],
+                                            },
                                         )
                                         if delete_result:
                                             st.session_state.confirm_state = {

@@ -18,6 +18,7 @@ walker add_documents(agent_graph_walker) {
     has lang:str = "english";
     has with_embeddings:bool = False;  # whether to generate embeddings for the documents
     has response:str = "";
+    has reporting:bool = True;
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
@@ -42,7 +43,7 @@ walker add_documents(agent_graph_walker) {
         }
 
         # generate the callback URL to pass to the deepdoc service
-        if( not(callback_url := here.generate_callback_url("deepdoc_callback")) ) {
+        if( not(callback_url := here.generate_callback_url()) ) {
             Jac.get_context().status = 500;
             Jac.get_context().error = "Unable to complete operation. Failed to generate a callback URL for job scheduling.";
             disengage;
@@ -58,6 +59,10 @@ walker add_documents(agent_graph_walker) {
             with_embeddings=self.with_embeddings,
             callback_url=callback_url
         );
+
+        if self.reporting {
+            report self.response;
+        }
     }
 
 }

@@ -13,6 +13,7 @@ walker cancel_job(agent_graph_walker) {
     # a list of {job_id, filename} pairs for removal
     has job_id:str = "";
     has response:bool = False;
+    has reporting:bool = True;
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
@@ -46,6 +47,10 @@ walker cancel_job(agent_graph_walker) {
         }
         # set the response status
         Jac.get_context().status = 200;
+
+        if self.reporting {
+            report self.response;
+        }
     }
 
 }

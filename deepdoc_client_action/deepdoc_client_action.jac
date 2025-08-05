@@ -5,7 +5,6 @@ import traceback;
 import from collections { defaultdict }
 import from logging { Logger }
 import from jivas.agent.action.action { Action }
-import from jvserve.lib.agent_interface { encrypt_webhook_key_exec }
 import from jvserve.lib.file_interface { file_interface }
 import from jivas.agent.memory.collection { Collection }
 import from actions.jivas.deepdoc_client_action.job_entry { JobEntry }
@@ -13,7 +12,7 @@ import from actions.jivas.deepdoc_client_action.doc_entry { DocEntry }
 import from actions.jivas.deepdoc_client_action.doc_file_entry { DocFileEntry }
 import from actions.jivas.deepdoc_client_action.doc_url_entry { DocURLEntry }
 import from actions.jivas.deepdoc_client_action.item_status { ItemStatus }
-
+import from .deepdoc_callback { deepdoc_callback }
 
 node DeepDocClientAction(Action) {
     # Integrates with DeepDoc OCR and document parsing services to ingest documents into a vector store
@@ -27,6 +26,7 @@ node DeepDocClientAction(Action) {
     has base_url:str = os.environ.get('JIVAS_BASE_URL', '');
     has vector_store_action:str = "TypesenseVectorStoreAction";
     has doc_manifest:dict = {}; # maintained for migrations
+    has webhook_token_expiry_days:int = 60;
 
     def on_register() -> None {
         # """
@@ -561,26 +561,27 @@ node DeepDocClientAction(Action) {
         return ", ".join(range_strings);
     }
 
-    def generate_callback_url(walker_name:str) -> str {
+    def generate_callback_url() -> str {
         # setup procedure for webhook registration on deepdoc
 
         base_url = self.base_url;
-        callback_url = "";
-
         agent_id = self.get_agent().id;
-        module_root = self.get_module_root();
-        # generate webhook key
-        webhook_key = encrypt_webhook_key_exec(agent_id=agent_id, module_root=module_root, walker=walker_name);
 
-        if(base_url and webhook_key) {
-            # complete the full webhook url
-            callback_url = f'{base_url}/action/webhook/{webhook_key}';
+        # generate webhook key
+        webhook_walker = deepdoc_callback(agent_id=agent_id);
+        callback_url = webhook_walker.get_callback_url(
+            base_url=self.base_url,
+            agent_id=agent_id,
+            expiration = self.webhook_token_expiry_days
+        );
+
+        if(callback_url) {
+            return callback_url;
         } else {
             self.logger.error('unable to generate webhook url for DeepDoc Client, missing required parameters');
             return "";
         }
 
-        return callback_url;
     }
 
     def get_job_entry(job_id:str) -> JobEntry {
@@ -929,7 +930,6 @@ walker _get_job_entry {
     has job_entry:JobEntry = None;
 
     obj __specs__ {
-        # make this a private walker
         static has private: bool = True;
     }
 

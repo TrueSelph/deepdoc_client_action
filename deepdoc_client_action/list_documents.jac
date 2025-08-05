@@ -13,6 +13,7 @@ walker list_documents(agent_graph_walker) {
     has per_page:int = 10;
     has all:bool = False;  # new flag to indicate whether to return all documents
     has response:list[dict] = [];
+    has reporting:bool = True;
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
@@ -32,6 +33,10 @@ walker list_documents(agent_graph_walker) {
             self.response = here.list_doc_entries(page=self.page, limit=0);  # fetch all documents
         } else {
             self.response = here.list_doc_entries(page=self.page, limit=self.per_page);  # fetch paged documents
+        }
+
+        if self.reporting {
+            report self.response;
         }
     }
 }

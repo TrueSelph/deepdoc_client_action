@@ -13,6 +13,7 @@ walker delete_job(agent_graph_walker) {
     # a list of {job_id, filename} pairs for removal
     has job_id:str = "";
     has response:bool = False;
+    has reporting:bool = True;
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
@@ -35,6 +36,10 @@ walker delete_job(agent_graph_walker) {
             Jac.get_context().status = 400;
             Jac.get_context().error = "Failed to delete the job.";
             self.response = False;
+        }
+
+        if self.reporting {
+            report self.response;
         }
 
     }

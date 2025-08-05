@@ -1,7 +1,9 @@
 import from datetime { datetime, timezone }
 import from jivas.agent.core.graph_node { GraphNode }
 import from actions.jivas.deepdoc_client_action.item_status { ItemStatus }
-import from jivas.agent.modules.agentlib.utils { Utils }
+
+import from jivas.agent.modules.system.common { node_obj }
+
 
 node DocEntry(GraphNode) {
     # represents a base deepdoc job document entry
@@ -16,7 +18,7 @@ node DocEntry(GraphNode) {
     has chunk_ids:list = [];
 
     def get_job_entry() {
-        Utils.node_obj([<--]);
+        node_obj([<--]);
     }
 
     def get_status() -> ItemStatus {
