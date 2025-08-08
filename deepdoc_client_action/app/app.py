@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Dict
 
 import streamlit as st
-from jvclient.lib.utils import call_api
+from jvclient.lib.utils import call_api, get_reports_payload
 from jvclient.lib.widgets import app_header, app_update_action
 from streamlit_router import StreamlitRouter
 
@@ -156,7 +156,8 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 files=files,
             )
 
-            if result:
+            if result and result.status_code == 200:
+                result = get_reports_payload(result)
                 # Display number of processed files
                 total_processed = len(doc_uploads) + len(url_list)
                 st.success(
@@ -255,7 +256,8 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             st.session_state.per_page = per_page
 
         # Fetch documents with pagination parameters
-        result = call_api(
+        result = {}
+        document_list = call_api(
             endpoint="action/walker/deepdoc_client_action/list_documents",
             json_data={
                 "agent_id": agent_id,
@@ -263,6 +265,8 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 "per_page": st.session_state.per_page,
             },
         )
+        if document_list and document_list.status_code == 200:
+            result = get_reports_payload(document_list)
 
         if result and "items" in result:
             document_list = result["items"]

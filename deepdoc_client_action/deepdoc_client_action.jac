@@ -965,10 +965,9 @@ walker _list_doc_entries {
 
     can on_collection with Collection entry {
 
-        job_entries = [-->](`?JobEntry);
-
         if self.total_items == 0 {
             # Count total doc entries if we need to
+            job_entries = [-->](`?JobEntry);
             for job in job_entries {
                 self.total_items += len(job.get_doc_entries());
             }
