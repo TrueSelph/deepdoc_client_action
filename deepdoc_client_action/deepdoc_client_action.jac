@@ -2,6 +2,7 @@ import os;
 import requests;
 import logging;
 import traceback;
+import base64;
 import from collections { defaultdict }
 import from logging { Logger }
 import from jivas.agent.action.action { Action }
@@ -202,7 +203,8 @@ node DeepDocClientAction(Action) {
                     # if files are in play, we archive the uploaded file(s) as under job_id in the doc_manifest
                     for (index, file_tuple) in enumerate(files_data) {
                         name = file_tuple[1][0];
-                        file_content = file_tuple[1][1];
+                        file_content_str = file_tuple[1][1];
+                        file_content = base64.b64decode(file_content_str);
                         mimetype = file_tuple[1][2];
                         metadata = metadatas[index] if metadatas and index < len(metadatas) else {};
 

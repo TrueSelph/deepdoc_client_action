@@ -1,5 +1,6 @@
 """This module contains the Streamlit app for the Typesense Vector Store Action"""
 
+import base64
 import time
 from datetime import datetime
 from typing import Dict
@@ -130,6 +131,22 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             st.info("Upload files and/or provide file URLs")
 
         if st.button("Upload", key=f"{model_key}_btn_queue_docs"):
+
+            # Prepare files list (if any)
+            files = []
+            if doc_uploads:
+                for selected_file in doc_uploads:
+                    encoded_data = base64.b64encode(selected_file.read()).decode(
+                        "utf-8"
+                    )
+                    files.append(
+                        {
+                            "name": selected_file.name,
+                            "content": encoded_data,
+                            "type": selected_file.type,
+                        }
+                    )
+
             # Prepare the payload
             payload = {
                 "agent_id": agent_id,
@@ -139,21 +156,13 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 "to_page": to_page,
                 "lang": lang,
                 "with_embeddings": with_embeddings,
+                "files": files,
             }
-
-            # Prepare files list (if any)
-            files = []
-            if doc_uploads:
-                for selected_file in doc_uploads:
-                    files.append(
-                        (selected_file.name, selected_file.read(), selected_file.type)
-                    )
 
             # Call the parse_pdfs walker
             result = call_api(
                 endpoint="action/walker/deepdoc_client_action/add_documents",
                 json_data=payload,
-                files=files,
             )
 
             if result and result.status_code == 200:
