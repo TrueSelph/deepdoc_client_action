@@ -1,22 +1,29 @@
-import:py logging;
-import:py traceback;
-import:py from logging { Logger }
-import:jac from jivas.agent.core.agent { Agent }
-import:jac from jivas.agent.action.action { Action }
-import:jac from jivas.agent.action.actions { Actions }
-import:jac from jivas.agent.action.interact_graph_walker { interact_graph_walker }
+import logging;
+import from logging { Logger }
+import from jivas.agent.core.agent { Agent }
+import from jivas.agent.action.action { Action }
+import from jivas.agent.action.actions { Actions }
+import from jivas.agent.action.agent_graph_walker { agent_graph_walker }
+import from jivas.agent.modules.action.path { action_walker_path }
 
 
-walker list_documents :interact_graph_walker: {
+walker list_documents(agent_graph_walker) {
     # action endpoint for listing all documents processed by the deepdoc service
 
     has page:int = 1;
     has per_page:int = 10;
     has all:bool = False;  # new flag to indicate whether to return all documents
     has response:list[dict] = [];
+    has reporting:bool = True;
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
+
+    class __specs__ {
+        static has private: bool = False;
+        static has path: str = action_walker_path(__module__);
+        static has excluded: list[str] = ["response"];  # exclude response from the specs
+    }
 
     can on_agent with Agent entry {
         visit [-->](`?Actions);
@@ -33,6 +40,10 @@ walker list_documents :interact_graph_walker: {
             self.response = here.list_doc_entries(page=self.page, limit=0);  # fetch all documents
         } else {
             self.response = here.list_doc_entries(page=self.page, limit=self.per_page);  # fetch paged documents
+        }
+
+        if self.reporting {
+            report self.response;
         }
     }
 }

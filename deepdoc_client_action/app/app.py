@@ -1,12 +1,14 @@
 """This module contains the Streamlit app for the Typesense Vector Store Action"""
 
+import io
+import json
 import time
 from datetime import datetime
 from typing import Dict
 
 import streamlit as st
-from jvcli.client.lib.utils import call_action_walker_exec
-from jvcli.client.lib.widgets import app_header, app_update_action
+from jvclient.lib.utils import call_api, get_reports_payload
+from jvclient.lib.widgets import app_header, app_update_action
 from streamlit_router import StreamlitRouter
 
 
@@ -130,34 +132,77 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             st.info("Upload files and/or provide file URLs")
 
         if st.button("Upload", key=f"{model_key}_btn_queue_docs"):
-            # Prepare the payload
-            payload = {
-                "urls": url_list if url_list else [],
-                "metadatas": metadata_list if metadata_list else [],
-                "from_page": from_page,
-                "to_page": to_page,
-                "lang": lang,
+            # Validate required inputs
+            if not agent_id:
+                st.error("Agent ID is required")
+                st.stop()
+
+            # Ensure at least one document source is provided
+            if not doc_uploads and not url_list:
+                st.error("Please provide either files or URLs")
+                st.stop()
+
+            # Build the JSON body structure
+            body_payload = {
+                "agent_id": str(agent_id),
+                "from_page": int(from_page) if from_page is not None else 0,
+                "to_page": int(to_page) if to_page is not None else 0,
+                "lang": str(lang),
                 "with_embeddings": with_embeddings,
             }
 
-            # Prepare files list (if any)
-            files = []
+            # Add optional fields only if they exist
+            if url_list:
+                body_payload["urls"] = url_list
+            if metadata_list:
+                body_payload["metadatas"] = metadata_list
+
+            # Create a JSON file in memory for the body
+            body_json = json.dumps(body_payload)
+            body_file = io.BytesIO(body_json.encode("utf-8"))
+
+            # Prepare the files list
+            files = [("body", ("body.json", body_file, "application/json"))]
+
+            # Add document files if any
             if doc_uploads:
                 for selected_file in doc_uploads:
+                    # Use correct MIME type or fallback
+                    mime_type = selected_file.type or "application/octet-stream"
                     files.append(
-                        (selected_file.name, selected_file.read(), selected_file.type)
+                        (
+                            "files",
+                            (selected_file.name, selected_file.getvalue(), mime_type),
+                        )
                     )
 
-            # Call the parse_pdfs walker
-            result = call_action_walker_exec(
-                agent_id, module_root, "add_documents", payload, files
-            )
+            # API call with proper error handling
+            try:
+                result = call_api(
+                    endpoint="action/walker/deepdoc_client_action/add_documents",
+                    files=files,
+                )
+                if result.status_code == 422:
+                    error_detail = result.json().get(
+                        "detail", "Unknown validation error"
+                    )
+                    st.error(f"Validation error: {error_detail}")
+                elif result.status_code >= 400:
+                    st.error(f"API Error ({result.status_code}): {result.text}")
+                else:
+                    st.success("Documents processed successfully!")
+            except Exception as e:
+                st.error(f"Connection failed: {str(e)}")
+            finally:
+                # Close the in-memory file
+                body_file.close()
 
-            if result:
+            if result and result.status_code == 200:
+                payload = get_reports_payload(result)
                 # Display number of processed files
                 total_processed = len(doc_uploads) + len(url_list)
                 st.success(
-                    f"{total_processed} document(s) submitted for processing under job ID [ {result} ]"
+                    f"{total_processed} document(s) submitted for processing under job ID {payload}"
                 )
             else:
                 st.error(
@@ -252,14 +297,19 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             st.session_state.per_page = per_page
 
         # Fetch documents with pagination parameters
-        args = {
-            "page": st.session_state.current_page,
-            "per_page": st.session_state.per_page,
-        }
-        result = call_action_walker_exec(agent_id, module_root, "list_documents", args)
+        result = call_api(
+            endpoint="action/walker/deepdoc_client_action/list_documents",
+            json_data={
+                "agent_id": agent_id,
+                "page": st.session_state.current_page,
+                "per_page": st.session_state.per_page,
+                "reporting": True,
+            },
+        )
 
-        if result and "items" in result:
-            document_list = result["items"]
+        if result and result.status_code == 200:
+            payload = get_reports_payload(result)
+            document_list = payload["items"]
 
             # Group documents by job_id
             jobs: Dict[str, list] = {}
@@ -273,15 +323,15 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             with col3:
                 page_col1, page_col2, page_col3 = st.columns([1, 2, 1])
                 with page_col1:
-                    if result.get("has_previous", False) and st.button("← Prev"):
+                    if payload.get("has_previous", False) and st.button("←"):
                         st.session_state.current_page -= 1
                         st.rerun()
                 with page_col2:
                     st.markdown(
-                        f"**Page {result.get('page', 1)}/{result.get('total_pages', 1)}**"
+                        f"**Page {payload.get('page', 1)}/{payload.get('total_pages', 1)}**"
                     )
                 with page_col3:
-                    if result.get("has_next", False) and st.button("Next →"):
+                    if payload.get("has_next", False) and st.button("→"):
                         st.session_state.current_page += 1
                         st.rerun()
 
@@ -335,12 +385,12 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         with col1:
                             if st.button("Yes, Cancel Job"):
                                 # Prepare arguments for cancellation
-                                args = {"job_id": job_id}
                                 # Call the cancel_documents walker
-                                cancel_result = call_action_walker_exec(
-                                    agent_id, module_root, "cancel_job", args
+                                cancel_result = call_api(
+                                    endpoint="action/walker/deepdoc_client_action/cancel_job",
+                                    json_data={"agent_id": agent_id, "job_id": job_id},
                                 )
-                                if cancel_result:
+                                if cancel_result and cancel_result.status_code == 200:
                                     st.session_state.current_page = 1
                                     st.session_state.confirm_state = {"active": False}
                                     st.rerun()
@@ -374,13 +424,12 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         col1, col2 = st.columns(2)
                         with col1:
                             if st.button("Yes, Delete Job"):
-                                # Prepare arguments for deletion
-                                args = {"job_id": job_id}
                                 # Call the delete_documents walker
-                                delete_result = call_action_walker_exec(
-                                    agent_id, module_root, "delete_job", args
+                                delete_result = call_api(
+                                    endpoint="action/walker/deepdoc_client_action/delete_job",
+                                    json_data={"agent_id": agent_id, "job_id": job_id},
                                 )
-                                if delete_result:
+                                if delete_result and delete_result.status_code == 200:
                                     st.session_state.current_page = 1
                                     st.session_state.confirm_state = {"active": False}
                                     st.rerun()
@@ -411,7 +460,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         else ""
                     )
 
-                    col1, col2, col3, col4, col5 = st.columns([3, 3, 2, 2, 1])
+                    col1, col2, col3, col4, col5 = st.columns([3, 3, 2, 2, 2])
                     with col1:
                         # Display document name as a hyperlink if source exists
                         if document.get("source"):
@@ -448,25 +497,25 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                                 and st.session_state.confirm_state["doc_id"]
                                 == document["id"]
                             ):
-                                st.warning("Are you sure?", icon="⚠️")
                                 col1, col2 = st.columns(2)
                                 with col1:
-                                    if st.button("Yes"):
-                                        # Prepare arguments for deletion
-                                        args = {
-                                            "documents": [
-                                                {
-                                                    "job_id": job_id,
-                                                    "doc_id": document["id"],
-                                                }
-                                            ]
-                                        }
+                                    if st.button(
+                                        "✅",
+                                        key=f"confirm_delete_{job_id}_{document['id']}",
+                                        help="Confirm delete",
+                                    ):
                                         # Call the delete_documents walker
-                                        delete_result = call_action_walker_exec(
-                                            agent_id,
-                                            module_root,
-                                            "delete_documents",
-                                            args,
+                                        delete_result = call_api(
+                                            endpoint="action/walker/deepdoc_client_action/delete_documents",
+                                            json_data={
+                                                "agent_id": agent_id,
+                                                "documents": [
+                                                    {
+                                                        "job_id": job_id,
+                                                        "doc_id": document["id"],
+                                                    }
+                                                ],
+                                            },
                                         )
                                         if delete_result:
                                             st.session_state.confirm_state = {
@@ -482,13 +531,20 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                                             }
                                             st.rerun()
                                 with col2:
-                                    if st.button("No"):
+                                    if st.button(
+                                        "🚫",
+                                        key=f"cancel_delete_{job_id}_{document['id']}",
+                                        help="Cancel delete",
+                                    ):
                                         st.session_state.confirm_state = {
                                             "active": False
                                         }
                                         st.rerun()
+                            # Use a red X icon button for delete
                             elif st.button(
-                                "Delete", key=f"delete_{job_id}_{document['name']}"
+                                "❌",
+                                key=f"delete_{job_id}_{document['name']}",
+                                help="Delete document",
                             ):
                                 st.session_state.confirm_state = {
                                     "active": True,
