@@ -1,29 +1,34 @@
-import:py logging;
-import:py traceback;
-import:py from logging { Logger }
-import:jac from jivas.agent.core.agent { Agent }
-import:jac from jivas.agent.action.action { Action }
-import:jac from jivas.agent.action.actions { Actions }
-import:jac from jivas.agent.action.interact_graph_walker { interact_graph_walker }
+import logging;
+import traceback;
+import from logging { Logger }
+import from jivas.agent.core.agent { Agent }
+import from jivas.agent.action.action { Action }
+import from jivas.agent.action.actions { Actions }
+import from jivas.agent.action.action_webhook_walker { action_webhook_walker }
+import from jivas.agent.modules.action.path { action_webhook_path }
+import from jac_cloud.plugin.jaseci { JacPlugin as Jac }
 
 
-walker deepdoc_callback :interact_graph_walker: {
+walker deepdoc_callback(action_webhook_walker) {
     # action endpoint for handling the deepdoc callback routine which processes deepdoc job and ingests into vector_store
 
-    # beacuse this is a callback/webhook, we have to use the following params
-    has headers:dict = {};
-    # main param for incoming webhook data
-    has params:dict = {};
-    # main param for outgoing webhook data
-    has response:bool = False;
+    has job_id:str = "";  # job ID from the deepdoc service
+    has status:str = "";  # status of the job (e.g., "completed", "failed")
+    has error:str = "";  # error message if the job failed
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
 
+    # set up walker as webhook
+    class __specs__(action_webhook_walker.__specs__) {
+        static has private: bool = False; # make it public
+        static has path: str = action_webhook_path(__module__);
+    }
+
     can on_agent with Agent entry {
 
         # handle request here to ensure it's worth the walk
-        if(not self.params) {
+        if(not self.job_id or not self.status) {
             Jac.get_context().status = 200;
             disengage;
         }
@@ -38,18 +43,14 @@ walker deepdoc_callback :interact_graph_walker: {
     can on_action with Action entry {
         # Process deepdoc job data and ingest into vector_store
 
-        job_id = self.params.get("job_id", "");
-        status = self.params.get("status", "");
-        error_message = self.params.get("error", "");
-
-        if status == "completed" {
+        if self.status == "completed" {
             # Retrieve the deepdoc job data
-            job_data = here.get_job_status(job_id=job_id);
+            job_data = here.get_job_status(job_id=self.job_id);
 
-            if job_id and job_data {
+            if self.job_id and job_data {
                 try {
                     # Ingest the job data into the vector store
-                    self.response = here.ingest_job(job_id=job_id, job_data=job_data);
+                    self.response = here.ingest_job(job_id=self.job_id, job_data=job_data);
                 } except Exception as e {
                     self.logger.error(f"Error during ingestion: {str(e)}");
                     self.logger.error(traceback.format_exc());
@@ -57,14 +58,16 @@ walker deepdoc_callback :interact_graph_walker: {
                 }
             } else {
                 self.logger.error("DeepDoc job data is incomplete or missing");
-                here.delete_job_entry(job_id=job_id);
+                here.delete_job_entry(job_id=self.job_id);
                 self.response = False;
             }
         } else {
-            self.logger.error(f"DeepDoc job failed with status: {status} - {error_message}");
-            here.delete_job_entry(job_id=job_id);
+            self.logger.error(f"DeepDoc job failed with status: {self.status} - {self.error}");
+            here.delete_job_entry(job_id=self.job_id);
             self.response = False;
         }
+
+        report self.response;
     }
 
 }

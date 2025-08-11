@@ -21,13 +21,13 @@ The **DeepDoc Client Action** now provides comprehensive document handling and m
 - **Duplicate Prevention Safeguards**:
   Duplicate processing of documents is automatically prevented. The system verifies and ensures that each uploaded document is unique within the repository and vector store, eliminating redundancy and potential confusion.
 
-This package is defined as a singleton action, requiring the Jivas library (version **2.0.0 or higher**) and a properly configured `vector_store_action`. It also requires the Jivas-modified DeepDoc service.
+This package is defined as a singleton action, requiring the Jivas library (version **2.1.0 or higher**) and a properly configured `vector_store_action`. It also requires the Jivas-modified DeepDoc service.
 
 ## Package Information
 
 - **Name:** `jivas/deepdoc_client_action`
 - **Author:** [V75 Inc.](https://v75inc.com/)
-- **Architype:** `DeepDocStoreAction`
+- **archetype:** `DeepDocStoreAction`
 
 ## Meta Information
 
@@ -41,7 +41,7 @@ This package is defined as a singleton action, requiring the Jivas library (vers
 
 ## Dependencies
 
-- **Jivas:** `^2.0.0`
+- **Jivas:** `^2.1.0`
 
 ---
 
