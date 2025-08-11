@@ -46,3 +46,6 @@
 # 0.1.2
 - Updated and fixes for Jivas 2.1.x comptatibility
 - Optimized list documents uses direct ORM paging via NodePager helper
+
+# 0.1.3
+- Patched check when doc list is empty
