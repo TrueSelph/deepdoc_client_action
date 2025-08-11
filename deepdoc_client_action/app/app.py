@@ -312,7 +312,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             document_list = []
             if payload and "items" in payload and isinstance(payload["items"], list):
                 document_list = payload["items"]
-        
+
             # Group documents by job_id
             jobs: Dict[str, list] = {}
             for item in document_list:
