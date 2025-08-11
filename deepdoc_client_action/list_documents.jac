@@ -22,7 +22,7 @@ walker list_documents(agent_graph_walker) {
     class __specs__ {
         static has private: bool = False;
         static has path: str = action_walker_path(__module__);
-        static has excluded: list[str] = ["response"];  # exclude response from the specs   
+        static has excluded: list[str] = ["response"];  # exclude response from the specs
     }
 
     can on_agent with Agent entry {

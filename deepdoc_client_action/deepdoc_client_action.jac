@@ -118,7 +118,7 @@ node DeepDocClientAction(Action) {
             files_data = [];
 
             for file in files {
-            
+
                 if "name" in file and "type" in file and "content" in file {
                     # Add the file to the files_data list
                     files_data.append(
@@ -130,7 +130,7 @@ node DeepDocClientAction(Action) {
                                 file["type"]
                             )
                         )
-                    );  
+                    );
                 } else {
                     self.logger.error(f"Invalid file format: {file}");
                     return "";
@@ -571,7 +571,7 @@ node DeepDocClientAction(Action) {
         # Lists all document entries in the manifest with pagination.
 
         # collection = self.get_collection();
-        
+
         # Initialize pager
         pager = NodePager(NodeAnchor.Collection, page_size=limit, current_page=page);
 
@@ -587,7 +587,7 @@ node DeepDocClientAction(Action) {
         items = [item.export() for item in items];
         # get all info as a dict
         pagination_info = pager.to_dict();
-        
+
         return {
             "page": page,
             "limit": limit,

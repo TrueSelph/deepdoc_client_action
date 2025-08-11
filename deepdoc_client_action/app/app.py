@@ -136,7 +136,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             if not agent_id:
                 st.error("Agent ID is required")
                 st.stop()
-            
+
             # Ensure at least one document source is provided
             if not doc_uploads and not url_list:
                 st.error("Please provide either files or URLs")
@@ -159,12 +159,10 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
             # Create a JSON file in memory for the body
             body_json = json.dumps(body_payload)
-            body_file = io.BytesIO(body_json.encode('utf-8'))
-            
+            body_file = io.BytesIO(body_json.encode("utf-8"))
+
             # Prepare the files list
-            files = [
-                ("body", ("body.json", body_file, "application/json"))
-            ]
+            files = [("body", ("body.json", body_file, "application/json"))]
 
             # Add document files if any
             if doc_uploads:
@@ -172,7 +170,10 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     # Use correct MIME type or fallback
                     mime_type = selected_file.type or "application/octet-stream"
                     files.append(
-                        ("files", (selected_file.name, selected_file.getvalue(), mime_type))
+                        (
+                            "files",
+                            (selected_file.name, selected_file.getvalue(), mime_type),
+                        )
                     )
 
             # API call with proper error handling
@@ -182,7 +183,9 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     files=files,
                 )
                 if result.status_code == 422:
-                    error_detail = result.json().get("detail", "Unknown validation error")
+                    error_detail = result.json().get(
+                        "detail", "Unknown validation error"
+                    )
                     st.error(f"Validation error: {error_detail}")
                 elif result.status_code >= 400:
                     st.error(f"API Error ({result.status_code}): {result.text}")
@@ -496,7 +499,11 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                             ):
                                 col1, col2 = st.columns(2)
                                 with col1:
-                                    if st.button("✅", key=f"confirm_delete_{job_id}_{document['id']}", help="Confirm delete"):
+                                    if st.button(
+                                        "✅",
+                                        key=f"confirm_delete_{job_id}_{document['id']}",
+                                        help="Confirm delete",
+                                    ):
                                         # Call the delete_documents walker
                                         delete_result = call_api(
                                             endpoint="action/walker/deepdoc_client_action/delete_documents",
@@ -524,13 +531,21 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                                             }
                                             st.rerun()
                                 with col2:
-                                    if st.button("🚫", key=f"cancel_delete_{job_id}_{document['id']}", help="Cancel delete"):
+                                    if st.button(
+                                        "🚫",
+                                        key=f"cancel_delete_{job_id}_{document['id']}",
+                                        help="Cancel delete",
+                                    ):
                                         st.session_state.confirm_state = {
                                             "active": False
                                         }
                                         st.rerun()
                             # Use a red X icon button for delete
-                            elif st.button("❌", key=f"delete_{job_id}_{document['name']}", help="Delete document"):
+                            elif st.button(
+                                "❌",
+                                key=f"delete_{job_id}_{document['name']}",
+                                help="Delete document",
+                            ):
                                 st.session_state.confirm_state = {
                                     "active": True,
                                     "type": "delete_doc",
