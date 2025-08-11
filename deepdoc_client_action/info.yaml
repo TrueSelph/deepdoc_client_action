@@ -11,4 +11,4 @@ package:
   config:
     singleton: true
   dependencies:
-    jivas: ~2.1.0
+    jivas: ~2.1.9
