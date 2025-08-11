@@ -45,3 +45,4 @@
 
 # 0.1.2
 - Updated and fixes for Jivas 2.1.x comptatibility
+- Optimized list documents uses direct ORM paging via NodePager helper
