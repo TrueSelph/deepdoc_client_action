@@ -12,6 +12,7 @@ import from jac_cloud.plugin.jaseci { JacPlugin as Jac }
 
 node JobEntry(GraphNode) {
     # represents a deepdoc job
+    has collection_id:str = "";
     has job_id:str = "";
     has status:ItemStatus = ItemStatus.PENDING;
     has created_on:str = str((datetime.now(timezone.utc)).isoformat());
@@ -52,6 +53,7 @@ node JobEntry(GraphNode) {
         # TODO: Check for duplicates
 
         doc_url_entry = DocURLEntry(
+            collection_id = self.collection_id,
             job_id = self.job_id,
             status = ItemStatus.PENDING if not self.job_id else ItemStatus.PROCESSING,
             name = url.split("/")[-1],
@@ -74,6 +76,7 @@ node JobEntry(GraphNode) {
         # TODO: Check for duplicates
 
         doc_file_entry = DocFileEntry(
+            collection_id = self.collection_id,
             job_id = self.job_id,
             status = ItemStatus.PENDING if not self.job_id else ItemStatus.PROCESSING,
             name = name,

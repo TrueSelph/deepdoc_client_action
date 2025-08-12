@@ -49,3 +49,6 @@
 
 # 0.1.3
 - Patched check when doc list is empty
+
+# 0.1.4
+- Updated DeepDoc pager filter and added collection_id as fk ref to localize its listing to specific collection. Useful for multi-agent setups.

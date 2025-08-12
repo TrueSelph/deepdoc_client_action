@@ -181,6 +181,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 result = call_api(
                     endpoint="action/walker/deepdoc_client_action/add_documents",
                     files=files,
+                    timeout=60,
                 )
                 if result.status_code == 422:
                     error_detail = result.json().get(
