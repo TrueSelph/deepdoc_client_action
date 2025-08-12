@@ -7,6 +7,8 @@ import from jivas.agent.modules.system.common { node_obj }
 
 node DocEntry(GraphNode) {
     # represents a base deepdoc job document entry
+
+    has collection_id:str = "";
     has job_id:str = "";
     has status:ItemStatus = ItemStatus.PENDING;
     has created_on:str = str((datetime.now(timezone.utc)).isoformat());

@@ -173,7 +173,7 @@ node DeepDocClientAction(Action) {
                     # grab action collection
                     collection = self.get_collection();
                     # create a new job entry node
-                    job_entry = JobEntry(job_id = job_id);
+                    job_entry = JobEntry(collection_id=collection.id, job_id = job_id);
                      # attach the job_entry node to collection
                     collection ++> job_entry;
                 }
@@ -570,16 +570,19 @@ node DeepDocClientAction(Action) {
     def list_doc_entries(page:int, limit:int) -> list[dict] {
         # Lists all document entries in the manifest with pagination.
 
-        # collection = self.get_collection();
-
+        collection = self.get_collection();
         # Initialize pager
         pager = NodePager(NodeAnchor.Collection, page_size=limit, current_page=page);
 
         # Get a page of results
-        items = pager.get_page({"name": "DocFileEntry"});
+        items = pager.get_page({
+            "$or": [
+            {"$and": [{"name": "DocFileEntry"}, {"archetype.collection_id": collection.id}]},
+            {"$and": [{"name": "DocURLEntry"}, {"archetype.collection_id": collection.id}]}
+            ]
+        });
 
         if not items {
-            self.logger.error("No document entries found in the manifest.");
             return {};
         }
 
