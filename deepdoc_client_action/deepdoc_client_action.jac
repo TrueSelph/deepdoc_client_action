@@ -2,6 +2,7 @@ import os;
 import requests;
 import logging;
 import traceback;
+import from typing { Optional }
 import from collections { defaultdict }
 import from logging { Logger }
 import from jivas.agent.action.action { Action }
@@ -15,6 +16,8 @@ import from actions.jivas.deepdoc_client_action.item_status { ItemStatus }
 import from .deepdoc_callback { deepdoc_callback }
 import from jac_cloud.core.archetype {BaseCollection, NodeAnchor}
 import from jivas.agent.modules.data.node_pager { NodePager }
+import from jivas.agent.modules.data.node_get { node_get }
+import from jivas.agent.modules.system.common { node_obj }
 
 node DeepDocClientAction(Action) {
     # Integrates with DeepDoc OCR and document parsing services to ingest documents into a vector store
@@ -562,9 +565,17 @@ node DeepDocClientAction(Action) {
 
     }
 
-    def get_job_entry(job_id:str) -> JobEntry {
+    def get_job_entry(job_id:str) -> Optional[JobEntry] {
+        # Retrieves a job entry by job_id from the collection.
         collection = self.get_collection();
-        return (collection spawn _get_job_entry(job_id=job_id)).job_entry;
+
+        job_entry = node_obj(node_get({
+            "name": "JobEntry",
+            "archetype.collection_id": collection.id,
+            "archetype.job_id": job_id
+        }));
+
+        return job_entry;
     }
 
     def list_doc_entries(page:int, limit:int) -> list[dict] {

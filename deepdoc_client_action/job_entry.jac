@@ -4,9 +4,7 @@ import from actions.jivas.deepdoc_client_action.doc_entry { DocEntry }
 import from actions.jivas.deepdoc_client_action.doc_file_entry { DocFileEntry }
 import from actions.jivas.deepdoc_client_action.doc_url_entry { DocURLEntry }
 import from actions.jivas.deepdoc_client_action.item_status { ItemStatus }
-
 import from jivas.agent.modules.system.common { node_obj }
-
 import from jac_cloud.plugin.jaseci { JacPlugin as Jac }
 
 
