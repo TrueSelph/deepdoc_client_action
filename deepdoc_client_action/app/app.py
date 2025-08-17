@@ -190,8 +190,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     st.error(f"Validation error: {error_detail}")
                 elif result.status_code >= 400:
                     st.error(f"API Error ({result.status_code}): {result.text}")
-                else:
-                    st.success("Documents processed successfully!")
+
             except Exception as e:
                 st.error(f"Connection failed: {str(e)}")
             finally:
@@ -200,11 +199,15 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
             if result and result.status_code == 200:
                 payload = get_reports_payload(result)
-                # Display number of processed files
-                total_processed = len(doc_uploads) + len(url_list)
-                st.success(
-                    f"{total_processed} document(s) submitted for processing under job ID {payload}"
-                )
+
+                if payload:
+                    # Display number of processed files
+                    total_processed = len(doc_uploads) + len(url_list)
+                    st.success(
+                        f"{total_processed} document(s) submitted for processing under job ID [{payload}]"
+                    )
+                else:
+                    st.error("No job ID returned from the API. Please try again.")
             else:
                 st.error(
                     "Failed to process documents. Please check your inputs and try again."

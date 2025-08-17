@@ -2,7 +2,7 @@ package:
   name: jivas/deepdoc_client_action
   author: V75 Inc.
   archetype: DeepDocClientAction
-  version: 0.1.4
+  version: 0.1.5
   meta:
     title: DeepDoc Client Action
     description: Integrates with DeepDoc OCR and document parsing services to ingest documents into a vector store
@@ -11,4 +11,4 @@ package:
   config:
     singleton: true
   dependencies:
-    jivas: ~2.1.9
+    jivas: ~2.1.14
