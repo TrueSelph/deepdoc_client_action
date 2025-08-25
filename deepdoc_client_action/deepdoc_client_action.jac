@@ -431,11 +431,12 @@ node DeepDocClientAction(Action) {
                         # Prepare chunk metadata
                         chunk_metadata = doc_metadata.copy();
                         chunk_metadata["page"] = self.format_page_range(result_page_nums);
-
+                        # Process bbox, if present
+                        chunk_metadata["bbox"] = result.get("metadata", {}).get("bbox", []);
                         # Add to batch
                         texts.append(text);
                         metadatas.append(chunk_metadata);
-                        ids.append(result.get("id") or f"doc_{os.urandom(8).hex()}");
+                        ids.append(result.get("id") or f"chunk_{os.urandom(8).hex()}");
 
                         # add embeddings to batch if available
                         if "embeddings" in result {
