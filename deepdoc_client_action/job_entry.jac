@@ -41,7 +41,7 @@ node JobEntry(GraphNode) {
         self.job_id = job_id;
     }
 
-    def add_doc_url_entry(url:str, metadata:dict={}) -> DocEntry {
+    def add_doc_url_entry(name:str, url:str, metadata:dict={}) -> DocEntry {
         # adds a doc url entry to this job entry
 
         if not url {
@@ -54,7 +54,7 @@ node JobEntry(GraphNode) {
             collection_id = self.collection_id,
             job_id = self.job_id,
             status = ItemStatus.PENDING if not self.job_id else ItemStatus.PROCESSING,
-            name = url.split("/")[-1],
+            name = name,
             source = url,
             metadata = metadata
         );

@@ -59,9 +59,8 @@ walker add_documents(agent_graph_walker) {
         }
 
         # iterate through all files and read their content
+        file_list = [];
         if self.files {
-
-            file_list = [];
             loop = asyncio.new_event_loop();
             asyncio.set_event_loop(loop);
             try {
@@ -80,18 +79,18 @@ walker add_documents(agent_graph_walker) {
             } finally {
                 loop.close();
             }
-
-            self.response = here.queue_job(
-                urls=self.urls,
-                files=file_list,
-                metadatas=self.metadatas,
-                from_page=self.from_page,
-                to_page=self.to_page,
-                lang=self.lang,
-                with_embeddings=self.with_embeddings,
-                callback_url=callback_url
-            );
         }
+
+        self.response = here.queue_job(
+            urls=self.urls,
+            files=file_list,
+            metadatas=self.metadatas,
+            from_page=self.from_page,
+            to_page=self.to_page,
+            lang=self.lang,
+            with_embeddings=self.with_embeddings,
+            callback_url=callback_url
+        );
 
         if self.reporting {
             report self.response;

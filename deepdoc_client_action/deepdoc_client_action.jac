@@ -1,4 +1,5 @@
 import os;
+import re;
 import requests;
 import logging;
 import traceback;
@@ -18,6 +19,7 @@ import from jac_cloud.core.archetype {BaseCollection, NodeAnchor}
 import from jivas.agent.modules.data.node_pager { NodePager }
 import from jivas.agent.modules.data.node_get { node_get }
 import from jivas.agent.modules.system.common { node_obj }
+import from urllib.parse { urlparse, unquote, parse_qs }
 
 node DeepDocClientAction(Action) {
     # Integrates with DeepDoc OCR and document parsing services to ingest documents into a vector store
@@ -194,7 +196,7 @@ node DeepDocClientAction(Action) {
                         metadata = metadatas[index] if metadatas and index < len(metadatas) else {};
 
                         # ensure the output filename is without whitespaces and slashes
-                        output_filename = f"{job_id}_{self.format_filename(name)}";
+                        output_filename = f"{job_id}_{self.sanitize_filename(name)}";
                         # save document to the file system
                         self.save_file(output_filename, file_content);
                         # retrieve short file url
@@ -217,10 +219,12 @@ node DeepDocClientAction(Action) {
                     for (index, url) in enumerate(urls) {
                         metadata = metadatas[index] if metadatas and index < len(metadatas) else {};
                         # update metadata
+                        filename = self.extract_filename_from_url(url);
                         metadata["source"] = url;
-                        metadata["filename"] = url.split("/")[-1];
+                        metadata["filename"] = filename;
                         metadata["job_id"] = job_id;
                         job_entry.add_doc_url_entry(
+                            name = filename,
                             url = url,
                             metadata = metadata
                         );
@@ -483,6 +487,9 @@ node DeepDocClientAction(Action) {
                     self.logger.error(traceback.format_exc());
                     success = False;
                 } finally {
+                    if not doc_entry {
+                        continue;
+                    }
                     doc_entry.set_status(ItemStatus.COMPLETED if doc_success else ItemStatus.FAILED);
                 }
 
@@ -497,6 +504,124 @@ node DeepDocClientAction(Action) {
             job_entry.set_status(ItemStatus.FAILED);
             return False;
         }
+    }
+
+    def extract_filename_from_url(url: str) -> str {
+        #*
+        Extract filename from URL with proper handling of query strings, Google Drive links, etc.
+
+        Args:
+            url: The URL to extract filename from
+
+        Returns:
+            Extracted filename with proper extension
+        *#
+
+        parsed = urlparse(url);
+        # Handle URLs with query parameters
+        path = parsed.path;
+        query = parsed.query;
+
+        # Handle Google Drive URLs specifically
+        if 'drive.google.com' in url or 'docs.google.com' in url {
+            return self.extract_google_drive_filename(url);
+        }
+
+        # Extract filename from path
+        filename = unquote(os.path.basename(path)) if path else f"download_{hash(url) % 10000}";
+
+        # If filename is empty or generic, try to get from query parameters
+        if not filename or filename in ['', 'download', 'file', 'document'] {
+            filename = self.extract_filename_from_query(query, url);
+        }
+
+        # Ensure we have a valid filename
+        if not filename or '.' not in filename {
+            filename = self.generate_safe_filename(url);
+        }
+
+        return self.sanitize_filename(filename);
+    }
+
+    def extract_google_drive_filename(url: str) -> str {
+        # Extract filename from Google Drive URL
+        filename = '';
+        file_id_match = re.search(r'/d/([a-zA-Z0-9_-]+)', url) or re.search(r'id=([a-zA-Z0-9_-]+)', url);
+
+        if not file_id_match {
+            filename = self.generate_safe_filename(url);
+        } else {
+            filename = file_id_match.group(1);
+        }
+
+        return self.sanitize_filename(filename);
+    }
+
+    def extract_filename_from_query(query: str, url: str) -> str {
+        # Try to extract filename from query parameters
+        query_params = parse_qs(query);
+
+        # Common query parameter names that might contain filenames
+        filename_params = ['filename', 'file', 'name', 'download', 'doc', 'document'];
+
+        for param in filename_params {
+            if param in query_params {
+                filename = query_params[param][0];
+                if filename and '.' in filename {  # Likely has extension
+                    return filename;
+                }
+            }
+        }
+
+        # Check for common file extension patterns in the entire URL
+        extension_pattern = r'\.(pdf|docx?|xlsx?|pptx?|txt|jpg|jpeg|png|gif|bmp|zip|rar|7z)';
+        extension_match = re.search(extension_pattern, url, re.IGNORECASE);
+        if extension_match {
+            ext = extension_match.group(1);
+            return f"document_{hash(url) % 10000}.{ext.lower()}";
+        }
+
+        return None;
+    }
+
+    def generate_safe_filename(url: str) -> str {
+        # Generate a safe filename based on URL and response headers
+        parsed = urlparse(url);
+
+        # Try to guess from URL path
+        if parsed.path {
+            # Look for common file extensions in the path
+            extension_pattern = r'\.([a-zA-Z0-9]{2,5})$';
+            extension_match = re.search(extension_pattern, parsed.path);
+            if extension_match {
+                ext = extension_match.group(1);
+                return f"document_{hash(url) % 10000}.{ext.lower()}";
+            }
+        }
+
+        # Final fallback
+        return f"download_{hash(url) % 10000}.bin";
+    }
+
+    def sanitize_filename(filename: str) -> str {
+        # Sanitize filename to remove invalid characters
+
+        # Remove invalid characters for filenames
+        invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*', "'", '"'];
+        for char in invalid_chars {
+            filename = filename.replace(char, '_');
+        }
+
+        # Remove multiple underscores and trim
+        filename = re.sub(r'_+', '_', filename).strip('_');
+
+        # Ensure filename is not too long
+        if len(filename) > 200 {
+            (name, ext) = os.path.splitext(filename);
+            filename = name[:200-len(ext)] + ext;
+        }
+
+        return filename;
     }
 
     def format_page_range(page_list:list[int]) -> str {
@@ -654,7 +779,7 @@ node DeepDocClientAction(Action) {
         if not isinstance(doc_entry, DocURLEntry) {
             # Attempt to delete the file from the filesystem if not url
             try {
-                self.delete_file(f"{job_id}_{self.format_filename(doc_entry.name)}");
+                self.delete_file(f"{job_id}_{self.sanitize_filename(doc_entry.name)}");
             } except Exception as e {
                 self.logger.error(f"Failed to delete file from filesystem: {str(e)}");
             }
@@ -744,20 +869,6 @@ node DeepDocClientAction(Action) {
         return success;
     }
 
-    def format_filename(filename:str) -> str {
-        # Formats the filename by removing spaces and slashes.
-        # Returns the formatted filename.
-
-        if not filename {
-            self.logger.error("Filename is empty or None.");
-            return filename;
-        }
-
-        # Remove spaces and slashes from the filename
-        formatted_filename = filename.replace(" ", "_").replace("/", "_").replace("\\", "_");
-
-        return formatted_filename;
-    }
 
 }
 
