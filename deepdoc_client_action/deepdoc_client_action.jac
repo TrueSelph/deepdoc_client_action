@@ -875,7 +875,7 @@ node DeepDocClientAction(Action) {
         export_collection = collection spawn _export_collection();
         return {"documents": export_collection.documents};
     }
-    
+
     def import_collection(collection_info:dict, purge_collection:bool=True) -> bool {
         if purge_collection {
             self.get_agent().get_memory().purge_collection_memory(self.label);
