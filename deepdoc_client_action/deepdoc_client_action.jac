@@ -870,6 +870,25 @@ node DeepDocClientAction(Action) {
         return success;
     }
 
+    def export_collection() -> dict {
+        collection = self.get_collection();
+        export_collection = collection spawn _export_collection();
+        return {"documents": export_collection.documents};
+    }
+    
+    def import_collection(collection_info:dict, purge_collection:bool=True) -> bool {
+        if purge_collection {
+            self.get_agent().get_memory().purge_collection_memory(self.label);
+        }
+        collection = self.get_collection();
+
+        if collection_info {
+            documents = collection_info.get("documents");
+            import_collection = collection spawn _import_collection(documents=documents);
+            return True;
+        }
+        return False;
+    }
 
 }
 
@@ -891,4 +910,120 @@ walker _get_job_entry {
         self.job_entry = here;
     }
 
+}
+
+
+walker _export_collection {
+    has documents:dict = {};
+
+    obj __specs__ {
+        static has private:bool = True;
+    }
+
+    can on_collection with Collection entry {
+        visit [-->](`?JobEntry);
+    }
+
+    can on_job_entry with JobEntry entry {
+        visit [-->];
+    }
+
+    can on_doc_file_entry with DocFileEntry entry {
+        job_entry_id = [<--](`?JobEntry)[0].job_id;
+        if job_entry_id not in self.documents {
+            self.documents[job_entry_id] = [here.export()];
+        } else {
+            self.documents[job_entry_id].append(here.export());
+        }
+    }
+
+    can on_doc_url_entry with DocURLEntry entry {
+        job_entry_id = [<--](`?JobEntry)[0].job_id;
+        if job_entry_id not in self.documents {
+            self.documents[job_entry_id] = [here.export()];
+        } else {
+            self.documents[job_entry_id].append(here.export());
+        }
+    }
+
+}
+
+walker _import_collection {
+    has documents:dict = {};
+
+    obj __specs__ {
+        static has private:bool = True;
+    }
+
+    can on_collection with Collection entry {
+        for job_id in self.documents {
+            visit [-->](`?JobEntry)(?job_id == job_id) else {
+                job_entry = JobEntry(collection_id=here.id, job_id=job_id);
+                here ++> job_entry;
+
+                for document_entry in self.documents[job_id] {
+                    if document_entry.get("mimetype") == "url"{
+
+                        doc_url_entry = DocURLEntry(
+                            collection_id = here.id,
+                            job_id = job_id,
+                            status = ItemStatus.PENDING if not job_id else ItemStatus.PROCESSING,
+                            name = document_entry.get("name"),
+                            source = document_entry.get("source"),
+                            metadata = document_entry.get("metadata")
+                        );
+
+                        # now we attach it to the job
+                        job_entry ++> doc_url_entry;
+
+                    } else {
+                        doc_file_entry = DocFileEntry(
+                            collection_id = here.id,
+                            job_id = job_id,
+                            status = ItemStatus.PENDING if not job_id else ItemStatus.PROCESSING,
+                            name = document_entry.get("name"),
+                            source = document_entry.get("source"),
+                            mimetype = document_entry.get("mimetype"),
+                            metadata = document_entry.get("metadata")
+                        );
+                        # now we attach it to the job
+                        job_entry ++> doc_file_entry;
+                    }
+                }
+
+            }
+        }
+    }
+
+    can on_job_entry with JobEntry entry {
+        for document_entry in self.documents[here.job_id] {
+            if document_entry.get("mimetype") == "url" and not [-->](`?DocURLEntry)(?name == document_entry.get("name")){
+
+                doc_url_entry = DocURLEntry(
+                    collection_id = here.collection_id,
+                    job_id = here.job_id,
+                    status = ItemStatus.PENDING if not here.job_id else ItemStatus.PROCESSING,
+                    name = document_entry.get("name"),
+                    source = document_entry.get("source"),
+                    metadata = document_entry.get("metadata")
+                );
+
+                # now we attach it to the job
+                here ++> doc_url_entry;
+
+            } elif not [-->](`?DocFileEntry)(?name == document_entry.get("name")) {
+                doc_file_entry = DocFileEntry(
+                    collection_id = here.collection_id,
+                    job_id = here.job_id,
+                    status = ItemStatus.PENDING if not here.job_id else ItemStatus.PROCESSING,
+                    name = document_entry.get("name"),
+                    source = document_entry.get("source"),
+                    mimetype = document_entry.get("mimetype"),
+                    metadata = document_entry.get("metadata")
+                );
+                # now we attach it to the job
+                here ++> doc_file_entry;
+            }
+        }
+    }
 }
