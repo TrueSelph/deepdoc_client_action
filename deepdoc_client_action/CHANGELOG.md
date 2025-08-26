@@ -55,3 +55,7 @@
 
 # 0.1.5
 - Optimized DeepDoc get_job_id with node_get utility
+
+# 0.1.6
+- Patched to process URLs
+- Added import and export collections to DeepDocClientAction
