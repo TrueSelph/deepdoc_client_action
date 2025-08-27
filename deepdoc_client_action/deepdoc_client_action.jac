@@ -876,14 +876,14 @@ node DeepDocClientAction(Action) {
         return {"documents": export_collection.documents};
     }
 
-    def import_collection(collection_info:dict, purge_collection:bool=True) -> bool {
-        if purge_collection {
+    def import_collection(data:dict, purge:bool=True) -> bool {
+        if purge {
             self.get_agent().get_memory().purge_collection_memory(self.label);
         }
         collection = self.get_collection();
 
-        if collection_info {
-            documents = collection_info.get("documents");
+        if data {
+            documents = data.get("documents");
             import_collection = collection spawn _import_collection(documents=documents);
             return True;
         }
