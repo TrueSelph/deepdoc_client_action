@@ -3,6 +3,7 @@ import re;
 import requests;
 import logging;
 import traceback;
+import from time { sleep }
 import from typing { Optional }
 import from collections { defaultdict }
 import from logging { Logger }
@@ -245,7 +246,7 @@ node DeepDocClientAction(Action) {
 
     def get_job_status(job_id:str) -> dict {
         # """
-        # Retrieves the status of a queued job from the DeepDoc service.
+        # Retrieves the status of a queued job from the DeepDoc service with retry logic.
 
         # Args:
         #     job_id (str): The ID of the job to check.
@@ -253,30 +254,54 @@ node DeepDocClientAction(Action) {
         # Returns:
         #     dict: The status and result of the job.
         # """
-        try {
-            # Make the GET request to the DeepDoc service
-            response = requests.get(f"{self.api_url}/job/{job_id}");
+        max_retries = 3;
+        retry_delay = 10;  # seconds between retries
 
-            # Check if the response is successful
-            if response.status_code != 200 {
-                self.logger.error(f"Failed to get job status: {response.text}");
+        for attempt in range(0, max_retries + 1) {
+            try {
+                # Make the GET request to the DeepDoc service
+                response = requests.get(f"{self.api_url}/job/{job_id}");
+
+                self.logger.warning(f"{self.api_url}/job/{job_id} - {response.status_code}");
+
+                # Check if the response is successful
+                if response.status_code == 200 {
+                    # Parse the response JSON
+                    response_data = response.json();
+
+                    # Ensure the response contains the expected fields
+                    if "status" in response_data {
+                        return response_data;
+                    } else {
+                        self.logger.error("Response does not contain 'status' field.");
+                        # Don't retry for invalid response format, return error immediately
+                        return {"status": "error", "error": "Invalid response format"};
+                    }
+                }
+
+                # If not successful and not the last attempt, retry
+                if attempt < max_retries {
+                    self.logger.warning(f"Attempt {attempt + 1} failed with status {response.status_code}. Retrying in {retry_delay} seconds...");
+                    sleep(retry_delay);
+                    continue;
+                }
+
+                # If this was the last attempt and still failed
+                self.logger.error(f"Failed to get job [{job_id}] status after {max_retries + 1} attempts: {response.text}");
                 return {"status": "error", "error": response.text};
-            }
 
-            # Parse the response JSON
-            response_data = response.json();
+            } except Exception as e {
+                # Handle network errors and other exceptions
+                if attempt < max_retries {
+                    self.logger.warning(f"Attempt {attempt + 1} failed with exception: {str(e)}. Retrying in {retry_delay} seconds...");
+                    sleep(retry_delay);
+                    continue;
+                }
 
-            # Ensure the response contains the expected fields
-            if "status" in response_data {
-                return response_data;
-            } else {
-                self.logger.error("Response does not contain 'status' field.");
-                return {"status": "error", "error": "Invalid response format"};
+                self.logger.error(f"Exception occurred while getting job status after {max_retries + 1} attempts: {str(e)}");
+                self.logger.error(traceback.format_exc());
+                return {"status": "error", "error": str(e)};
             }
-        } except Exception as e {
-            self.logger.error(f"Exception occurred while getting job status: {str(e)}");
-            self.logger.error(traceback.format_exc());
-            return {"status": "error", "error": str(e)};
         }
     }
 
@@ -876,14 +901,14 @@ node DeepDocClientAction(Action) {
         return {"documents": export_collection.documents};
     }
 
-    def import_collection(collection_info:dict, purge_collection:bool=True) -> bool {
-        if purge_collection {
+    def import_collection(data:dict, purge:bool=True) -> bool {
+        if purge {
             self.get_agent().get_memory().purge_collection_memory(self.label);
         }
         collection = self.get_collection();
 
-        if collection_info {
-            documents = collection_info.get("documents");
+        if data {
+            documents = data.get("documents");
             import_collection = collection spawn _import_collection(documents=documents);
             return True;
         }

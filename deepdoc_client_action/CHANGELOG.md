@@ -59,3 +59,6 @@
 # 0.1.6
 - Patched to process URLs
 - Added import and export collections to DeepDocClientAction
+
+# 0.1.7
+- Updated Import collection params
