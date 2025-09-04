@@ -21,13 +21,13 @@ The **DeepDoc Client Action** now provides comprehensive document handling and m
 - **Duplicate Prevention Safeguards**:
   Duplicate processing of documents is automatically prevented. The system verifies and ensures that each uploaded document is unique within the repository and vector store, eliminating redundancy and potential confusion.
 
-This package is defined as a singleton action, requiring the Jivas library (version **2.0.0 or higher**) and a properly configured `vector_store_action`. It also requires the Jivas-modified DeepDoc service.
+This package is defined as a singleton action, requiring the Jivas library (version **2.1.0 or higher**) and a properly configured `vector_store_action`. It also requires the Jivas-modified DeepDoc service.
 
 ## Package Information
 
 - **Name:** `jivas/deepdoc_client_action`
 - **Author:** [V75 Inc.](https://v75inc.com/)
-- **Architype:** `DeepDocStoreAction`
+- **archetype:** `DeepDocStoreAction`
 
 ## Meta Information
 
@@ -41,7 +41,7 @@ This package is defined as a singleton action, requiring the Jivas library (vers
 
 ## Dependencies
 
-- **Jivas:** `^2.0.0`
+- **Jivas:** `^2.1.0`
 
 ---
 
@@ -65,15 +65,15 @@ The DeepDoc Client Action can be accessed via an API endpoint to perform various
 
 #### 1. Add Documents
 
+**Endpoint:** `/action/walker/deepdoc_client_action/add_documents`
+
 This walker processes documents and ingests them into the vector store.
 
 **Payload Example:**
-
 ```json
 {
   "agent_id": "12345",
   "module_root": "actions.jivas.deepdoc_client_action",
-  "walker": "add_documents",
   "args": {
     "urls": ["http://example.com/document.pdf"],
     "metadatas": [{"author": "John Doe"}],
@@ -93,6 +93,8 @@ This walker processes documents and ingests them into the vector store.
 
 #### 2. List Documents
 
+**Endpoint:** `/action/walker/deepdoc_client_action/list_documents`
+
 This walker lists all or paged documents processed by the deepdoc service.
 
 #### Arguments for `list_documents`
@@ -102,12 +104,10 @@ This walker lists all or paged documents processed by the deepdoc service.
 - `all` (bool, default: False): A flag to indicate whether to return all documents. If set to `True`, pagination parameters (`page` and `per_page`) are ignored.
 
 **Payload Example:**
-
 ```json
 {
   "agent_id": "12345",
   "module_root": "actions.jivas.deepdoc_client_action",
-  "walker": "list_documents",
   "args": {
     "page": 1,
     "per_page": 10,
@@ -117,6 +117,8 @@ This walker lists all or paged documents processed by the deepdoc service.
 
 #### 3. Delete Documents
 
+**Endpoint:** `/action/walker/deepdoc_client_action/delete_documents`
+
 This walker removes documents from the vector store and deletes local file system entries.
 
 **Payload Example:**
@@ -125,7 +127,6 @@ This walker removes documents from the vector store and deletes local file syste
 {
   "agent_id": "12345",
   "module_root": "actions.jivas.deepdoc_client_action",
-  "walker": "delete_documents",
   "args": {
     "documents": [
       {
@@ -139,6 +140,8 @@ This walker removes documents from the vector store and deletes local file syste
 
 #### 4. Delete Job
 
+**Endpoint:** `/action/walker/deepdoc_client_action/delete_job`
+
 This walker removes documents by job ID from the vector store and deletes local file system entries.
 
 **Payload Example:**
@@ -147,7 +150,24 @@ This walker removes documents by job ID from the vector store and deletes local 
 {
   "agent_id": "12345",
   "module_root": "actions.jivas.deepdoc_client_action",
-  "walker": "delete_job",
+  "args": {
+    "job_id": "67890",
+  }
+}
+```
+
+#### 5. Cancel Job
+
+**Endpoint:** `/action/walker/deepdoc_client_action/cancel_job`
+
+This walker cancels a job by job ID from the vector store and deletes local file system entries.
+
+**Payload Example:**
+
+```json
+{
+  "agent_id": "12345",
+  "module_root": "actions.jivas.deepdoc_client_action",
   "args": {
     "job_id": "67890",
   }
