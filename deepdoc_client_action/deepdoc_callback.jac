@@ -15,7 +15,6 @@ walker deepdoc_callback(action_webhook_walker) {
     has job_id:str = "";  # job ID from the deepdoc service
     has status:str = "";  # status of the job (e.g., "completed", "failed")
     has error:str = "";  # error message if the job failed
-
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
 
@@ -26,10 +25,21 @@ walker deepdoc_callback(action_webhook_walker) {
     }
 
     can on_agent with Agent entry {
+        # grab payload from webhook call
+        payload = self.get_request_json();
+
+        if payload {
+            self.job_id = payload.get("job_id", "");
+            self.status = payload.get("status", "");
+            self.error = payload.get("error", "");
+        }
 
         # handle request here to ensure it's worth the walk
         if(not self.job_id or not self.status) {
-            Jac.get_context().status = 200;
+            self.response = {
+                "status": 401,
+                "message": "No payload received"
+            };
             disengage;
         }
 
@@ -42,6 +52,7 @@ walker deepdoc_callback(action_webhook_walker) {
 
     can on_action with Action entry {
         # Process deepdoc job data and ingest into vector_store
+        result = None;
 
         if self.status == "completed" {
             # Retrieve the deepdoc job data
@@ -50,24 +61,36 @@ walker deepdoc_callback(action_webhook_walker) {
             if self.job_id and job_data {
                 try {
                     # Ingest the job data into the vector store
-                    self.response = here.ingest_job(job_id=self.job_id, job_data=job_data);
+                    result = here.ingest_job(job_id=self.job_id, job_data=job_data);
                 } except Exception as e {
                     self.logger.error(f"Error during ingestion: {str(e)}");
                     self.logger.error(traceback.format_exc());
-                    self.response = False;
+                    self.response = {
+                        "status": 500,
+                        "message": f"Error during ingestion: {str(e)}"
+                    };
                 }
             } else {
                 self.logger.error("DeepDoc job data is incomplete or missing");
                 here.delete_job_entry(job_id=self.job_id);
-                self.response = False;
+                self.response = {
+                    "status": 401,
+                    "message": "DeepDoc job data is incomplete or missing"
+                };
             }
         } else {
             self.logger.error(f"DeepDoc job failed with status: {self.status} - {self.error}");
             here.delete_job_entry(job_id=self.job_id);
-            self.response = False;
+            self.response = {
+                "status": 401,
+                "message": f"DeepDoc job failed with status: {self.status} - {self.error}"
+            };
         }
 
-        report self.response;
+        self.response = {
+            "status": 200,
+            "message": "200 OK"
+        };
     }
 
 }
