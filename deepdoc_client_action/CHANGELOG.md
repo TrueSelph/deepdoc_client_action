@@ -62,3 +62,6 @@
 
 # 0.1.7
 - Updated Import collection params
+
+# 0.1.8
+- Updated deepdoc_callback for compat with JIVAS 2.1.18 webhook

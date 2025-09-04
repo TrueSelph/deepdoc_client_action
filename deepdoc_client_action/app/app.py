@@ -313,259 +313,292 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
         if result and result.status_code == 200:
             payload = get_reports_payload(result)
-            document_list = []
-            if payload and "items" in payload and isinstance(payload["items"], list):
-                document_list = payload["items"]
+            if payload:
+                document_list = []
+                if (
+                    payload
+                    and "items" in payload
+                    and isinstance(payload["items"], list)
+                ):
+                    document_list = payload["items"]
 
-            # Group documents by job_id
-            jobs: Dict[str, list] = {}
-            for item in document_list:
-                job_id = item["job_id"]
-                if job_id not in jobs:
-                    jobs[job_id] = []
-                jobs[job_id].append(item)
+                # Group documents by job_id
+                jobs: Dict[str, list] = {}
+                for item in document_list:
+                    job_id = item["job_id"]
+                    if job_id not in jobs:
+                        jobs[job_id] = []
+                    jobs[job_id].append(item)
 
-            # Pagination controls
-            with col3:
-                page_col1, page_col2, page_col3 = st.columns([1, 2, 1])
-                with page_col1:
-                    if payload.get("has_previous", False) and st.button("←"):
-                        st.session_state.current_page -= 1
-                        st.rerun()
-                with page_col2:
-                    st.markdown(
-                        f"**Page {payload.get('page', 1)}/{payload.get('total_pages', 1)}**"
-                    )
-                with page_col3:
-                    if payload.get("has_next", False) and st.button("→"):
-                        st.session_state.current_page += 1
-                        st.rerun()
+                # Pagination controls
+                with col3:
+                    page_col1, page_col2, page_col3 = st.columns([1, 2, 1])
+                    with page_col1:
+                        if payload.get("has_previous", False) and st.button("←"):
+                            st.session_state.current_page -= 1
+                            st.rerun()
+                    with page_col2:
+                        st.markdown(
+                            f"**Page {payload.get('page', 1)}/{payload.get('total_pages', 1)}**"
+                        )
+                    with page_col3:
+                        if payload.get("has_next", False) and st.button("→"):
+                            st.session_state.current_page += 1
+                            st.rerun()
 
-            # Check if any document is still processing or ingesting
-            any_processing = any(
-                item.get("status") in ("PROCESSING", "INGESTING")
-                for item in document_list
-            )
-
-            # Display documents grouped by job_id
-            for job_id, documents in jobs.items():
-                # Check if any document in this job is still processing
-                job_processing = any(
-                    doc.get("status") in ("PROCESSING", "INGESTING")
-                    for doc in documents
+                # Check if any document is still processing or ingesting
+                any_processing = any(
+                    item.get("status") in ("PROCESSING", "INGESTING")
+                    for item in document_list
                 )
 
-                st.markdown(f"##### Job: {job_id}")
-
-                # Display job status and dates
-                first_doc = documents[0]
-                status = first_doc.get("status", "").upper()
-
-                col1, col2, col3 = st.columns([2, 3, 3])
-                with col1:
-                    st.markdown(get_status_badge(status), unsafe_allow_html=True)
-                with col2:
-                    st.text(
-                        f"Created: {format_datetime(first_doc.get('created_on', ''))}"
-                    )
-                with col3:
-                    if status in ("COMPLETED", "CANCELLED"):
-                        st.text(
-                            f"Completed: {format_datetime(first_doc.get('completed_on', ''))}"
-                        )
-                    else:
-                        st.text("")  # Empty space for alignment
-
-                # Handle Cancel Job confirmation flow
-                if job_processing:
-                    if (
-                        st.session_state.confirm_state["active"]
-                        and st.session_state.confirm_state["type"] == "cancel_job"
-                        and st.session_state.confirm_state["job_id"] == job_id
-                    ):
-                        st.warning(
-                            f"Are you sure you want to cancel job {job_id}? This action cannot be undone.",
-                            icon="⚠️",
-                        )
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            if st.button("Yes, Cancel Job"):
-                                # Prepare arguments for cancellation
-                                # Call the cancel_documents walker
-                                cancel_result = call_api(
-                                    endpoint="action/walker/deepdoc_client_action/cancel_job",
-                                    json_data={"agent_id": agent_id, "job_id": job_id},
-                                )
-                                if cancel_result and cancel_result.status_code == 200:
-                                    st.session_state.current_page = 1
-                                    st.session_state.confirm_state = {"active": False}
-                                    st.rerun()
-                                else:
-                                    st.error(f"Failed to cancel job {job_id}.")
-                                    st.session_state.confirm_state = {"active": False}
-                                    st.rerun()
-                        with col2:
-                            if st.button("No, Keep Job"):
-                                st.session_state.confirm_state = {"active": False}
-                                st.rerun()
-                    elif st.button("Cancel Job", key=f"cancel_job_{job_id}"):
-                        st.session_state.confirm_state = {
-                            "active": True,
-                            "type": "cancel_job",
-                            "job_id": job_id,
-                        }
-                        st.rerun()
-
-                # Handle Delete Job confirmation flow
-                if not job_processing:
-                    if (
-                        st.session_state.confirm_state["active"]
-                        and st.session_state.confirm_state["type"] == "delete_job"
-                        and st.session_state.confirm_state["job_id"] == job_id
-                    ):
-                        st.warning(
-                            f"Are you sure you want to delete job {job_id} and all its documents? This action cannot be undone.",
-                            icon="⚠️",
-                        )
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            if st.button("Yes, Delete Job"):
-                                # Call the delete_documents walker
-                                delete_result = call_api(
-                                    endpoint="action/walker/deepdoc_client_action/delete_job",
-                                    json_data={"agent_id": agent_id, "job_id": job_id},
-                                )
-                                if delete_result and delete_result.status_code == 200:
-                                    st.session_state.current_page = 1
-                                    st.session_state.confirm_state = {"active": False}
-                                    st.rerun()
-                                else:
-                                    st.error(f"Failed to delete job {job_id}.")
-                                    st.session_state.confirm_state = {"active": False}
-                                    st.rerun()
-                        with col2:
-                            if st.button("No, Keep Job"):
-                                st.session_state.confirm_state = {"active": False}
-                                st.rerun()
-                    elif st.button("Delete Job", key=f"delete_job_{job_id}"):
-                        st.session_state.confirm_state = {
-                            "active": True,
-                            "type": "delete_job",
-                            "job_id": job_id,
-                        }
-                        st.rerun()
-
-                # Display each document in the job
-                for document in documents:
-                    doc_status = document.get("status", "").upper()
-                    processing_time = (
-                        calculate_processing_time(
-                            document.get("created_on"), document.get("completed_on")
-                        )
-                        if doc_status == "COMPLETED"
-                        else ""
+                # Display documents grouped by job_id
+                for job_id, documents in jobs.items():
+                    # Check if any document in this job is still processing
+                    job_processing = any(
+                        doc.get("status") in ("PROCESSING", "INGESTING")
+                        for doc in documents
                     )
 
-                    col1, col2, col3, col4, col5 = st.columns([3, 3, 2, 2, 2])
+                    st.markdown(f"##### Job: {job_id}")
+
+                    # Display job status and dates
+                    first_doc = documents[0]
+                    status = first_doc.get("status", "").upper()
+
+                    col1, col2, col3 = st.columns([2, 3, 3])
                     with col1:
-                        # Display document name as a hyperlink if source exists
-                        if document.get("source"):
-                            st.markdown(
-                                f"[{document['name']}]({document['source']})",
-                                unsafe_allow_html=True,
+                        st.markdown(get_status_badge(status), unsafe_allow_html=True)
+                    with col2:
+                        st.text(
+                            f"Created: {format_datetime(first_doc.get('created_on', ''))}"
+                        )
+                    with col3:
+                        if status in ("COMPLETED", "CANCELLED"):
+                            st.text(
+                                f"Completed: {format_datetime(first_doc.get('completed_on', ''))}"
                             )
                         else:
-                            st.text(document["name"])
-                    with col2:
-                        # Display metadata if available
-                        metadata = document.get("metadata", {})
-                        if metadata and st.toggle(
-                            "Metadata",
-                            key=f"metadata_{job_id}_{document['name']}",
-                            value=False,
+                            st.text("")  # Empty space for alignment
+
+                    # Handle Cancel Job confirmation flow
+                    if job_processing:
+                        if (
+                            st.session_state.confirm_state["active"]
+                            and st.session_state.confirm_state["type"] == "cancel_job"
+                            and st.session_state.confirm_state["job_id"] == job_id
                         ):
-                            st.json(metadata)
-                    with col3:
-                        # Display file type
-                        st.text(document.get("mimetype", ""))
-                    with col4:
-                        # Display processing time if completed
-                        if doc_status == "COMPLETED" and processing_time != "00:00:00":
-                            st.text(f"Processed in: {processing_time}")
-                    with col5:
-                        # Show "Delete" button if processed, otherwise "Processing"
-                        if doc_status in ("COMPLETED", "FAILED", "CANCELLED"):
-                            if (
-                                st.session_state.confirm_state["active"]
-                                and st.session_state.confirm_state["type"]
-                                == "delete_doc"
-                                and st.session_state.confirm_state["job_id"] == job_id
-                                and st.session_state.confirm_state["doc_id"]
-                                == document["id"]
-                            ):
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    if st.button(
-                                        "✅",
-                                        key=f"confirm_delete_{job_id}_{document['id']}",
-                                        help="Confirm delete",
+                            st.warning(
+                                f"Are you sure you want to cancel job {job_id}? This action cannot be undone.",
+                                icon="⚠️",
+                            )
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.button("Yes, Cancel Job"):
+                                    # Prepare arguments for cancellation
+                                    # Call the cancel_documents walker
+                                    cancel_result = call_api(
+                                        endpoint="action/walker/deepdoc_client_action/cancel_job",
+                                        json_data={
+                                            "agent_id": agent_id,
+                                            "job_id": job_id,
+                                        },
+                                    )
+                                    if (
+                                        cancel_result
+                                        and cancel_result.status_code == 200
                                     ):
-                                        # Call the delete_documents walker
-                                        delete_result = call_api(
-                                            endpoint="action/walker/deepdoc_client_action/delete_documents",
-                                            json_data={
-                                                "agent_id": agent_id,
-                                                "documents": [
-                                                    {
-                                                        "job_id": job_id,
-                                                        "doc_id": document["id"],
-                                                    }
-                                                ],
-                                            },
-                                        )
-                                        if delete_result:
-                                            st.session_state.confirm_state = {
-                                                "active": False
-                                            }
-                                            st.rerun()
-                                        else:
-                                            st.error(
-                                                f"Failed to delete document {document['name']}."
-                                            )
-                                            st.session_state.confirm_state = {
-                                                "active": False
-                                            }
-                                            st.rerun()
-                                with col2:
-                                    if st.button(
-                                        "🚫",
-                                        key=f"cancel_delete_{job_id}_{document['id']}",
-                                        help="Cancel delete",
-                                    ):
+                                        st.session_state.current_page = 1
                                         st.session_state.confirm_state = {
                                             "active": False
                                         }
                                         st.rerun()
-                            # Use a red X icon button for delete
-                            elif st.button(
-                                "❌",
-                                key=f"delete_{job_id}_{document['name']}",
-                                help="Delete document",
+                                    else:
+                                        st.error(f"Failed to cancel job {job_id}.")
+                                        st.session_state.confirm_state = {
+                                            "active": False
+                                        }
+                                        st.rerun()
+                            with col2:
+                                if st.button("No, Keep Job"):
+                                    st.session_state.confirm_state = {"active": False}
+                                    st.rerun()
+                        elif st.button("Cancel Job", key=f"cancel_job_{job_id}"):
+                            st.session_state.confirm_state = {
+                                "active": True,
+                                "type": "cancel_job",
+                                "job_id": job_id,
+                            }
+                            st.rerun()
+
+                    # Handle Delete Job confirmation flow
+                    if not job_processing:
+                        if (
+                            st.session_state.confirm_state["active"]
+                            and st.session_state.confirm_state["type"] == "delete_job"
+                            and st.session_state.confirm_state["job_id"] == job_id
+                        ):
+                            st.warning(
+                                f"Are you sure you want to delete job {job_id} and all its documents? This action cannot be undone.",
+                                icon="⚠️",
+                            )
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.button("Yes, Delete Job"):
+                                    # Call the delete_documents walker
+                                    delete_result = call_api(
+                                        endpoint="action/walker/deepdoc_client_action/delete_job",
+                                        json_data={
+                                            "agent_id": agent_id,
+                                            "job_id": job_id,
+                                        },
+                                    )
+                                    if (
+                                        delete_result
+                                        and delete_result.status_code == 200
+                                    ):
+                                        st.session_state.current_page = 1
+                                        st.session_state.confirm_state = {
+                                            "active": False
+                                        }
+                                        st.rerun()
+                                    else:
+                                        st.error(f"Failed to delete job {job_id}.")
+                                        st.session_state.confirm_state = {
+                                            "active": False
+                                        }
+                                        st.rerun()
+                            with col2:
+                                if st.button("No, Keep Job"):
+                                    st.session_state.confirm_state = {"active": False}
+                                    st.rerun()
+                        elif st.button("Delete Job", key=f"delete_job_{job_id}"):
+                            st.session_state.confirm_state = {
+                                "active": True,
+                                "type": "delete_job",
+                                "job_id": job_id,
+                            }
+                            st.rerun()
+
+                    # Display each document in the job
+                    for document in documents:
+                        doc_status = document.get("status", "").upper()
+                        processing_time = (
+                            calculate_processing_time(
+                                document.get("created_on"), document.get("completed_on")
+                            )
+                            if doc_status == "COMPLETED"
+                            else ""
+                        )
+
+                        col1, col2, col3, col4, col5 = st.columns([3, 3, 2, 2, 2])
+                        with col1:
+                            # Display document name as a hyperlink if source exists
+                            if document.get("source"):
+                                st.markdown(
+                                    f"[{document['name']}]({document['source']})",
+                                    unsafe_allow_html=True,
+                                )
+                            else:
+                                st.text(document["name"])
+                        with col2:
+                            # Display metadata if available
+                            metadata = document.get("metadata", {})
+                            if metadata and st.toggle(
+                                "Metadata",
+                                key=f"metadata_{job_id}_{document['name']}",
+                                value=False,
                             ):
-                                st.session_state.confirm_state = {
-                                    "active": True,
-                                    "type": "delete_doc",
-                                    "job_id": job_id,
-                                    "doc_id": document["id"],
-                                }
-                                st.rerun()
-                        else:
-                            st.text("Processing")
+                                st.json(metadata)
+                        with col3:
+                            # Display file type
+                            st.text(document.get("mimetype", ""))
+                        with col4:
+                            # Display processing time if completed
+                            if (
+                                doc_status == "COMPLETED"
+                                and processing_time != "00:00:00"
+                            ):
+                                st.text(f"Processed in: {processing_time}")
+                        with col5:
+                            # Show "Delete" button if processed, otherwise "Processing"
+                            if doc_status in ("COMPLETED", "FAILED", "CANCELLED"):
+                                if (
+                                    st.session_state.confirm_state["active"]
+                                    and st.session_state.confirm_state["type"]
+                                    == "delete_doc"
+                                    and st.session_state.confirm_state["job_id"]
+                                    == job_id
+                                    and st.session_state.confirm_state["doc_id"]
+                                    == document["id"]
+                                ):
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        if st.button(
+                                            "✅",
+                                            key=f"confirm_delete_{job_id}_{document['id']}",
+                                            help="Confirm delete",
+                                        ):
+                                            # Call the delete_documents walker
+                                            delete_result = call_api(
+                                                endpoint="action/walker/deepdoc_client_action/delete_documents",
+                                                json_data={
+                                                    "agent_id": agent_id,
+                                                    "documents": [
+                                                        {
+                                                            "job_id": job_id,
+                                                            "doc_id": document["id"],
+                                                        }
+                                                    ],
+                                                },
+                                            )
+                                            if delete_result:
+                                                st.session_state.confirm_state = {
+                                                    "active": False
+                                                }
+                                                st.rerun()
+                                            else:
+                                                st.error(
+                                                    f"Failed to delete document {document['name']}."
+                                                )
+                                                st.session_state.confirm_state = {
+                                                    "active": False
+                                                }
+                                                st.rerun()
+                                    with col2:
+                                        if st.button(
+                                            "🚫",
+                                            key=f"cancel_delete_{job_id}_{document['id']}",
+                                            help="Cancel delete",
+                                        ):
+                                            st.session_state.confirm_state = {
+                                                "active": False
+                                            }
+                                            st.rerun()
+                                # Use a red X icon button for delete
+                                elif st.button(
+                                    "❌",
+                                    key=f"delete_{job_id}_{document['name']}",
+                                    help="Delete document",
+                                ):
+                                    st.session_state.confirm_state = {
+                                        "active": True,
+                                        "type": "delete_doc",
+                                        "job_id": job_id,
+                                        "doc_id": document["id"],
+                                    }
+                                    st.rerun()
+                            else:
+                                st.text("Processing")
 
-            # Auto-refresh every 5 seconds if any documents are processing
-            if any_processing:
-                time.sleep(5)
-                st.rerun()
+                # Auto-refresh every 5 seconds if any documents are processing
+                if any_processing:
+                    time.sleep(5)
+                    st.rerun()
 
+            else:
+                st.info(
+                    "No documents found. Your uploaded documents will be shown here."
+                )
         else:
             st.info("No documents found. Your uploaded documents will be shown here.")
