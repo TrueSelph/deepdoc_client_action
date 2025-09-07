@@ -68,3 +68,7 @@
 
 # 0.1.9
 - Updates and improvements for improved deepdoc_api
+
+# 0.1.10
+- Bugfix in deepdoc_callback
+- Updated docs
