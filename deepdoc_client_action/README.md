@@ -73,14 +73,11 @@ This walker processes documents and ingests them into the vector store.
 ```json
 {
   "agent_id": "12345",
-  "module_root": "actions.jivas.deepdoc_client_action",
-  "args": {
-    "urls": ["http://example.com/document.pdf"],
-    "metadatas": [{"author": "John Doe"}],
-    "from_page": 0,
-    "to_page": 100000,
-    "lang": "english"
-  },
+  "urls": ["http://example.com/document.pdf"],
+  "metadatas": [{"author": "John Doe"}],
+  "from_page": 0,
+  "to_page": 100000,
+  "lang": "english",
   "files": [
     {
       "name": "document1.pdf",

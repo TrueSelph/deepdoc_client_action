@@ -53,7 +53,7 @@ walker deepdoc_callback(action_webhook_walker) {
 
     can on_action with Action entry {
         # Process deepdoc job data and ingest into vector_store
-        self.response = self.retrieve_job(job_id=self.job_id);
+        self.response = here.retrieve_job(job_id=self.job_id);
     }
 
 }
