@@ -280,6 +280,71 @@ node DeepDocClientAction(Action) {
         }
     }
 
+    def retrieve_job(job_id:str) -> dict {
+        # when called, it checks the job status and if completed, retrieves and ingests the data
+        # it also handles marking the job as failed if the job status is failed or error
+        # it does nothing if the job is still processing or pending
+
+        job_data = self.get_job_status(job_id=job_id);
+        job_entry = self.get_job_entry(job_id=job_id);
+
+        if not job_data or not job_entry {
+            self.logger.error("DeepDoc job data is incomplete or missing");
+            if job_entry {
+                job_entry.set_status(ItemStatus.FAILED);
+            }
+            return {
+                "status": 401,
+                "message": "DeepDoc job data is incomplete or missing"
+            };
+        }
+
+        job_status = job_data.get("status");
+
+        if job_status in ["failed", "error"] {
+            self.logger.error(f"Job {job_id} failed with status: {job_status}");
+            job_entry.set_status(ItemStatus.FAILED);
+            return {
+                "status": 500,
+                "message": f"Job {job_id} failed with status: {job_status}"
+            };
+        }
+
+        if job_status != "completed" {
+            self.logger.info(f"Job {job_id} is not completed. Current status: {job_status}");
+            return {
+                "status": 202,
+                "message": f"Job {job_id} is not completed. Current status: {job_status}"
+            };
+        }
+
+        try {
+            # Ingest the job data into the vector store
+            result = self.ingest_job(job_id=job_id, job_data=job_data);
+            if result {
+                self.logger.info(f"Job {job_id} ingested successfully.");
+                return {
+                    "status": 200,
+                    "message": "200 OK"
+                };
+            } else {
+                self.logger.error(f"Job {job_id} ingestion failed.");
+                return {
+                    "status": 500,
+                    "message": f"Job {job_id} ingestion failed."
+                };
+            }
+        } except Exception as e {
+            self.logger.error(f"Error during ingestion: {str(e)}");
+            self.logger.error(traceback.format_exc());
+            job_entry.set_status(ItemStatus.FAILED);
+            return {
+                "status": 500,
+                "message": f"Error during ingestion: {str(e)}"
+            };
+        }
+    }
+
     def cancel_job(job_id:str) -> dict {
         # """
         # Cancels a deepdoc job which is still in processing
@@ -440,13 +505,14 @@ node DeepDocClientAction(Action) {
 
                         # add embeddings to batch if available
                         if "embeddings" in result {
-                            embeddings.append(result.get("embeddings", []));
+                            if (embedding := result.get("embeddings")) and embedding and isinstance(embedding, list) {
+                                embeddings.append(embedding);
+                            }
                         }
                     }
 
                     # Ingest batch
                     if texts {
-
                         if embeddings {
                             # Add texts with embeddings
                             chunk_ids = vector_store_action.add_texts_with_embeddings(
@@ -455,7 +521,6 @@ node DeepDocClientAction(Action) {
                                 ids=ids,
                                 embeddings=embeddings
                             );
-
                         } else {
                             # Add texts without embeddings
                             chunk_ids = vector_store_action.add_texts(

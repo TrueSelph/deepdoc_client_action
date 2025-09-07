@@ -107,11 +107,8 @@ This walker lists all or paged documents processed by the deepdoc service.
 ```json
 {
   "agent_id": "12345",
-  "module_root": "actions.jivas.deepdoc_client_action",
-  "args": {
-    "page": 1,
-    "per_page": 10,
-  }
+  "page": 1,
+  "per_page": 10,
 }
 ```
 
@@ -126,15 +123,12 @@ This walker removes documents from the vector store and deletes local file syste
 ```json
 {
   "agent_id": "12345",
-  "module_root": "actions.jivas.deepdoc_client_action",
-  "args": {
-    "documents": [
-      {
-        "job_id": "67890",
-        "filename": "document1.pdf"
-      }
-    ]
-  }
+  "documents": [
+    {
+      "job_id": "67890",
+      "filename": "document1.pdf"
+    }
+  ]
 }
 ```
 
@@ -149,10 +143,7 @@ This walker removes documents by job ID from the vector store and deletes local 
 ```json
 {
   "agent_id": "12345",
-  "module_root": "actions.jivas.deepdoc_client_action",
-  "args": {
-    "job_id": "67890",
-  }
+  "job_id": "67890",
 }
 ```
 
@@ -167,10 +158,22 @@ This walker cancels a job by job ID from the vector store and deletes local file
 ```json
 {
   "agent_id": "12345",
-  "module_root": "actions.jivas.deepdoc_client_action",
-  "args": {
-    "job_id": "67890",
-  }
+  "job_id": "67890",
+}
+```
+
+#### 5. Retrieve Job
+
+**Endpoint:** `/action/walker/deepdoc_client_action/retrieve_job`
+
+This walker retrieves a job by job ID from server and ingests the job data.
+
+**Payload Example:**
+
+```json
+{
+  "agent_id": "12345",
+  "job_id": "67890",
 }
 ```
 
@@ -184,7 +187,7 @@ This action supports configuration either via **environment variables** or direc
 
 | Variable Name              | Description                                    | Default Value                             | Required |
 |----------------------------|------------------------------------------------|-------------------------------------------|----------|
-| `DEEPDOC_API_URL`          | API endpoint URL of your DeepDoc service       | `http://localhost:8001`           | Yes      |
+| `DEEPDOC_API_URL`          | API endpoint URL of your DeepDoc service       | `http://localhost:8991`           | Yes      |
 | `DEEPDOC_API_KEY`          | Your DeepDoc API authentication token          | `api-key` *(replace with secure value)*   | Yes      |
 | `JIVAS_BASE_URL`           | Base URL for your Jivas instance; required for the deepdoc callback to function             | http://localhost:8000                                  | Yes |
 | `VECTOR_STORE_ACTION`      | Action used for storing vector data            | `TypesenseVectorStoreAction`              | Yes      |

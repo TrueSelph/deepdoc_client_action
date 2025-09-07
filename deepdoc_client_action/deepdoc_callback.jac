@@ -6,6 +6,7 @@ import from jivas.agent.action.action { Action }
 import from jivas.agent.action.actions { Actions }
 import from jivas.agent.action.action_webhook_walker { action_webhook_walker }
 import from jivas.agent.modules.action.path { action_webhook_path }
+import from actions.jivas.deepdoc_client_action.item_status { ItemStatus }
 import from jac_cloud.plugin.jaseci { JacPlugin as Jac }
 
 
@@ -52,45 +53,7 @@ walker deepdoc_callback(action_webhook_walker) {
 
     can on_action with Action entry {
         # Process deepdoc job data and ingest into vector_store
-        result = None;
-
-        if self.status == "completed" {
-            # Retrieve the deepdoc job data
-            job_data = here.get_job_status(job_id=self.job_id);
-
-            if self.job_id and job_data {
-                try {
-                    # Ingest the job data into the vector store
-                    result = here.ingest_job(job_id=self.job_id, job_data=job_data);
-                } except Exception as e {
-                    self.logger.error(f"Error during ingestion: {str(e)}");
-                    self.logger.error(traceback.format_exc());
-                    self.response = {
-                        "status": 500,
-                        "message": f"Error during ingestion: {str(e)}"
-                    };
-                }
-            } else {
-                self.logger.error("DeepDoc job data is incomplete or missing");
-                here.delete_job_entry(job_id=self.job_id);
-                self.response = {
-                    "status": 401,
-                    "message": "DeepDoc job data is incomplete or missing"
-                };
-            }
-        } else {
-            self.logger.error(f"DeepDoc job failed with status: {self.status} - {self.error}");
-            here.delete_job_entry(job_id=self.job_id);
-            self.response = {
-                "status": 401,
-                "message": f"DeepDoc job failed with status: {self.status} - {self.error}"
-            };
-        }
-
-        self.response = {
-            "status": 200,
-            "message": "200 OK"
-        };
+        self.response = self.retrieve_job(job_id=self.job_id);
     }
 
 }
