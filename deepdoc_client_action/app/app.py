@@ -276,7 +276,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
         if "current_page" not in st.session_state:
             st.session_state.current_page = 1
         if "per_page" not in st.session_state:
-            st.session_state.per_page = 10
+            st.session_state.per_page = 25
 
         # Initialize confirmation states
         if "confirm_state" not in st.session_state:
@@ -293,8 +293,8 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             # Per-page selection dropdown
             per_page = st.selectbox(
                 "Items per page",
-                options=[1, 5, 10, 20, 50],
-                index=[1, 5, 10, 20, 50].index(st.session_state.per_page),
+                options=[1, 5, 10, 25, 50, 100],
+                index=[1, 5, 10, 25, 50, 100].index(st.session_state.per_page),
                 key="per_page_selector",
                 on_change=lambda: setattr(st.session_state, "current_page", 1),
             )
@@ -360,7 +360,24 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         for doc in documents
                     )
 
-                    st.markdown(f"##### Job: {job_id}")
+                    # Horizontal rule between jobs
+                    st.markdown("---")
+                    # Right-align the refresh button
+                    rcol1, rcol2 = st.columns([1, 11])
+                    with rcol1:
+                        if job_processing:
+                            if st.button("🔄", key=f"refresh_{job_id}"):
+                                # Call retrieve_job to manually update status
+                                call_api(
+                                    endpoint="action/walker/deepdoc_client_action/retrieve_job",
+                                    json_data={"agent_id": agent_id, "job_id": job_id},
+                                )
+                                st.rerun()
+                        else:
+                            # a disabled refresh button when not processing
+                            st.button("✔️", key=f"done_{job_id}", disabled=True)
+                    with rcol2:
+                        st.markdown(f"##### Job: {job_id}")
 
                     # Display job status and dates
                     first_doc = documents[0]
@@ -519,7 +536,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                                 doc_status == "COMPLETED"
                                 and processing_time != "00:00:00"
                             ):
-                                st.text(f"Processed in: {processing_time}")
+                                st.markdown(f"⏱️ {processing_time}")
                         with col5:
                             # Show "Delete" button if processed, otherwise "Processing"
                             if doc_status in ("COMPLETED", "FAILED", "CANCELLED"):

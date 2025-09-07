@@ -1,0 +1,51 @@
+import logging;
+import from logging { Logger }
+import from jivas.agent.core.agent { Agent }
+import from jivas.agent.action.action { Action }
+import from jivas.agent.action.actions { Actions }
+import from jivas.agent.action.agent_graph_walker { agent_graph_walker }
+import from jivas.agent.modules.action.path { action_walker_path }
+import from jac_cloud.plugin.jaseci { JacPlugin as Jac }
+
+
+walker retrieve_job(agent_graph_walker) {
+    # action endpoint which retrieves document jobs and updates the manifest and ingests into the vector store if completed
+
+    # a list of {job_id, filename} pairs for removal
+    has job_id:str = "";
+    has response:bool = False;
+
+    # set up logger
+    static has logger:Logger = logging.getLogger(__name__);
+
+    class __specs__ {
+        static has private: bool = False;
+        static has path: str = action_walker_path(__module__);
+        static has excluded: list[str] = ["response"];  # exclude response from the specs
+    }
+
+    can on_agent with Agent entry {
+        visit [-->](`?Actions);
+    }
+
+    can on_actions with Actions entry {
+        visit [-->](`?Action)(?enabled==True)(?label=='DeepDocClientAction');
+    }
+
+    can on_action with Action entry {
+        # call the remove/delete method on the action
+
+        success = True;
+
+        # check if the documents list is empty
+        if not self.job_id {
+            Jac.get_context().status = 400;
+            Jac.get_context().error = "No Job ID provided for retrieval.";
+            self.response = False;
+            disengage;
+        }
+
+        self.response = here.retrieve_job(job_id=self.job_id);
+    }
+
+}

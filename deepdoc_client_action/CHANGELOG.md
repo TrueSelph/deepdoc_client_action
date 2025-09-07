@@ -65,3 +65,6 @@
 
 # 0.1.8
 - Updated deepdoc_callback for compat with JIVAS 2.1.18 webhook
+
+# 0.1.9
+- Updates and improvements for improved deepdoc_api

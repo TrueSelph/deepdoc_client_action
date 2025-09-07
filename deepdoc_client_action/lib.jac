@@ -5,5 +5,6 @@ import from actions.jivas.deepdoc_client_action {
     cancel_job,
     list_documents,
     deepdoc_callback,
-    delete_job
+    delete_job,
+    retrieve_job
 }
