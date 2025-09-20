@@ -72,3 +72,6 @@
 # 0.1.10
 - Bugfix in deepdoc_callback
 - Updated docs
+
+# 0.1.11
+- Increase timeout and add logs

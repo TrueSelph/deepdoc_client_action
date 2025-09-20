@@ -181,7 +181,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 result = call_api(
                     endpoint="action/walker/deepdoc_client_action/add_documents",
                     files=files,
-                    timeout=60,
+                    timeout=120,
                 )
                 if result.status_code == 422:
                     error_detail = result.json().get(
@@ -309,6 +309,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 "per_page": st.session_state.per_page,
                 "reporting": True,
             },
+            timeout=120,
         )
 
         if result and result.status_code == 200:
@@ -371,6 +372,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                                 call_api(
                                     endpoint="action/walker/deepdoc_client_action/retrieve_job",
                                     json_data={"agent_id": agent_id, "job_id": job_id},
+                                    timeout=120,
                                 )
                                 st.rerun()
                         else:
@@ -420,6 +422,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                                             "agent_id": agent_id,
                                             "job_id": job_id,
                                         },
+                                        timeout=120,
                                     )
                                     if (
                                         cancel_result
@@ -469,6 +472,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                                             "agent_id": agent_id,
                                             "job_id": job_id,
                                         },
+                                        timeout=120,
                                     )
                                     if (
                                         delete_result
@@ -568,6 +572,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                                                         }
                                                     ],
                                                 },
+                                                timeout=120,
                                             )
                                             if delete_result:
                                                 st.session_state.confirm_state = {

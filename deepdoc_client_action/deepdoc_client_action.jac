@@ -56,7 +56,7 @@ node DeepDocClientAction(Action) {
             };
         }
         try {
-            response = requests.get(f"{self.api_url}/health");
+            response = requests.get(f"{self.api_url}/health", timeout=1440);
             return response.status_code == 200;
         } except Exception as e {
             self.logger.error(traceback.format_exc());
@@ -151,7 +151,8 @@ node DeepDocClientAction(Action) {
             response = requests.post(
                 f"{self.api_url}/upload_and_chunk",
                 files=files_data,
-                data=payload
+                data=payload,
+                timeout=1440
             );
 
             if not response {
@@ -255,7 +256,7 @@ node DeepDocClientAction(Action) {
         # """
         try {
             # Make the GET request to the DeepDoc service
-            response = requests.get(f"{self.api_url}/job/{job_id}");
+            response = requests.get(f"{self.api_url}/job/{job_id}", timeout=1440);
 
             # Check if the response is successful
             if response.status_code != 200 {
@@ -287,6 +288,8 @@ node DeepDocClientAction(Action) {
 
         job_data = self.get_job_status(job_id=job_id);
         job_entry = self.get_job_entry(job_id=job_id);
+        job_data["job_id"] = job_id;
+        self.logger.info(f"DeepDoc job result:{job_data}");
 
         if not job_data or not job_entry {
             self.logger.error("DeepDoc job data is incomplete or missing");
@@ -300,6 +303,9 @@ node DeepDocClientAction(Action) {
         }
 
         job_status = job_data.get("status");
+        if job_status in ["cancelled"] {
+            self.cancel_job(job_id);
+        }
 
         if job_status in ["failed", "error"] {
             self.logger.error(f"Job {job_id} failed with status: {job_status}");
@@ -357,7 +363,7 @@ node DeepDocClientAction(Action) {
         # """
         try {
             # Make the GET request to the DeepDoc service
-            response = requests.post(f"{self.api_url}/job/{job_id}/cancel");
+            response = requests.post(f"{self.api_url}/job/{job_id}/cancel", timeout=1440);
 
             # Check if the response is successful
             if response.status_code != 200 {
