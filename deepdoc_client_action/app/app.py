@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Dict
 
 import streamlit as st
+import yaml
 from jvclient.lib.utils import call_api, get_reports_payload
 from jvclient.lib.widgets import app_header, app_update_action
 from streamlit_router import StreamlitRouter
@@ -270,6 +271,106 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
         }
         color = color_map.get(status, "gray")
         return f"<span style='background-color: {color}; color: white; padding: 2px 6px; border-radius: 4px;'>{status}</span>"
+
+    with st.expander("Export document", True):
+        # Fetch documents with pagination parameters
+        with_embeddings = st.toggle(
+            "Export with Embeddings", value=True, key=f"{model_key}_with_embeddings"
+        )
+        result = call_api(
+            endpoint="action/walker/deepdoc_client_action/export_documents",
+            json_data={
+                "agent_id": agent_id,
+                "reporting": True,
+                "with_embeddings": with_embeddings,
+            },
+            timeout=120,
+        )
+
+        if result and result.status_code == 200:
+            payload = get_reports_payload(result)
+            if payload:
+                st.download_button(
+                    label="Download Documents",
+                    data=json.dumps(payload, indent=2, ensure_ascii=False),
+                    file_name="deepdoc_documents.json",
+                    mime="application/json",
+                )
+            else:
+                st.error("No job ID returned from the API. Please try again.")
+
+    with st.expander("Import document", True):
+        knode_source = st.radio(
+            "Choose data source:",
+            ("Text input", "Upload file"),
+            key=f"{model_key}_knode_source",
+        )
+
+        purge_collection = st.toggle(
+            "Purge Collection",
+            value=False,
+            key=f"{model_key}_purge_collection",
+        )
+
+        data_to_import = ""
+        if knode_source == "Text input":
+            data_to_import = st.text_area(
+                "Document in YAML or JSON",
+                value="",
+                height=170,
+                key=f"{model_key}_knode_data",
+            )
+
+        uploaded_file = None
+        if knode_source == "Upload file":
+            uploaded_file = st.file_uploader(
+                "Upload file (YAML or JSON)",
+                type=["yaml", "json"],
+                key=f"{model_key}_document_upload",
+            )
+
+        with_embeddings = st.toggle(
+            "Import with Embeddings",
+            value=True,
+            key=f"{model_key}_import_embeddings",
+        )
+
+        if st.button("Import", key=f"{model_key}_btn_import_document"):
+            if uploaded_file:
+                try:
+                    file_content = uploaded_file.read().decode(
+                        "utf-8", errors="replace"
+                    )
+                    if uploaded_file.type == "application/json":
+                        data_to_import = json.loads(file_content)
+                    else:
+                        data_to_import = yaml.safe_load(file_content)
+                    data_to_import = json.dumps(data_to_import, ensure_ascii=False)
+                except Exception as e:
+                    st.error(f"Error loading file: {e}")
+
+            if data_to_import:
+                st.info("Importing agent Document...")
+                result = call_api(
+                    endpoint="action/walker/deepdoc_client_action/import_documents",
+                    json_data={
+                        "agent_id": agent_id,
+                        "data": data_to_import,
+                        "with_embeddings": with_embeddings,
+                        "purge": purge_collection,
+                    },
+                )
+                st.write(result)
+                if result:
+                    st.success("Agent documents imported successfully")
+                else:
+                    st.error(
+                        "Failed to import document. Ensure valid YAML/JSON format."
+                    )
+            else:
+                st.error(
+                    "No data to import. Please provide valid text or upload a file."
+                )
 
     with st.expander("Document List", True):
         # Initialize session state variables for pagination

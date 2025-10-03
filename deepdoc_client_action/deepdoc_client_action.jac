@@ -1,5 +1,6 @@
 import os;
 import re;
+import json;
 import requests;
 import logging;
 import traceback;
@@ -941,10 +942,18 @@ node DeepDocClientAction(Action) {
         return success;
     }
 
-    def export_collection() -> dict {
+    def export_collection(with_embeddings:bool=False) -> dict {
         collection = self.get_collection();
         export_collection = collection spawn _export_collection();
-        return {"documents": export_collection.documents};
+
+        vector_store_action = self.get_agent().get_action(action_label=self.vector_store_action);
+        knodes = vector_store_action.export_knodes(
+            as_json=True,
+            with_embeddings=with_embeddings,
+            with_ids=True
+        );
+
+        return {"documents": export_collection.documents, "knodes": json.loads(knodes)};
     }
 
     def import_collection(data:dict, purge:bool=True) -> bool {
@@ -959,6 +968,29 @@ node DeepDocClientAction(Action) {
             return True;
         }
         return False;
+    }
+
+    def import_documents(data:dict, with_embeddings:bool=False, purge:bool=True) -> bool {
+        try {
+            if data.get("documents") {
+                self.import_collection(data=data, purge=purge);
+            }
+
+            if data.get("knodes") {
+                vector_store_action = self.get_agent().get_action(action_label=self.vector_store_action);
+                if purge {
+                    vector_store_action.delete_collection();
+                }
+                vector_store_action.import_knodes(data=data.get("knodes"), with_embeddings=with_embeddings);
+            }
+        } except Exception as e {
+            self.logger.error(f"Failed to import documents: {str(e)}");
+            self.logger.error(traceback.format_exc());
+            return False;
+        }
+
+        return True;
+
     }
 
 }
@@ -1001,19 +1033,23 @@ walker _export_collection {
 
     can on_doc_file_entry with DocFileEntry entry {
         job_entry_id = [<--](`?JobEntry)[0].job_id;
+        job_status = [<--](`?JobEntry)[0].status;
+
         if job_entry_id not in self.documents {
-            self.documents[job_entry_id] = [here.export()];
+            self.documents[job_entry_id] = [{"document": here.export(), "job_status": job_status}];
         } else {
-            self.documents[job_entry_id].append(here.export());
+            self.documents[job_entry_id].append({"document": here.export(), "job_status": job_status});
         }
     }
 
     can on_doc_url_entry with DocURLEntry entry {
         job_entry_id = [<--](`?JobEntry)[0].job_id;
+        job_status = [<--](`?JobEntry)[0].status;
+
         if job_entry_id not in self.documents {
-            self.documents[job_entry_id] = [here.export()];
+            self.documents[job_entry_id] = [{"document": here.export(), "job_status": job_status}];
         } else {
-            self.documents[job_entry_id].append(here.export());
+            self.documents[job_entry_id].append({"document": here.export(), "job_status": job_status});
         }
     }
 
@@ -1029,16 +1065,18 @@ walker _import_collection {
     can on_collection with Collection entry {
         for job_id in self.documents {
             visit [-->](`?JobEntry)(?job_id == job_id) else {
-                job_entry = JobEntry(collection_id=here.id, job_id=job_id);
+                job_entry = JobEntry(collection_id=here.id, job_id=job_id, status=self.documents[job_id][0]["job_status"]);
                 here ++> job_entry;
 
-                for document_entry in self.documents[job_id] {
+                for document in self.documents[job_id] {
+                    document_entry = document.get("document");
+
                     if document_entry.get("mimetype") == "url"{
 
                         doc_url_entry = DocURLEntry(
                             collection_id = here.id,
                             job_id = job_id,
-                            status = ItemStatus.PENDING if not job_id else ItemStatus.PROCESSING,
+                            status = document_entry.get("status"),
                             name = document_entry.get("name"),
                             source = document_entry.get("source"),
                             metadata = document_entry.get("metadata")
@@ -1051,7 +1089,7 @@ walker _import_collection {
                         doc_file_entry = DocFileEntry(
                             collection_id = here.id,
                             job_id = job_id,
-                            status = ItemStatus.PENDING if not job_id else ItemStatus.PROCESSING,
+                            status = document_entry.get("status"),
                             name = document_entry.get("name"),
                             source = document_entry.get("source"),
                             mimetype = document_entry.get("mimetype"),
@@ -1068,12 +1106,14 @@ walker _import_collection {
 
     can on_job_entry with JobEntry entry {
         for document_entry in self.documents[here.job_id] {
+            document_entry = document.get("document");
+
             if document_entry.get("mimetype") == "url" and not [-->](`?DocURLEntry)(?name == document_entry.get("name")){
 
                 doc_url_entry = DocURLEntry(
                     collection_id = here.collection_id,
                     job_id = here.job_id,
-                    status = ItemStatus.PENDING if not here.job_id else ItemStatus.PROCESSING,
+                    status = document_entry.get("status"),
                     name = document_entry.get("name"),
                     source = document_entry.get("source"),
                     metadata = document_entry.get("metadata")
@@ -1086,7 +1126,7 @@ walker _import_collection {
                 doc_file_entry = DocFileEntry(
                     collection_id = here.collection_id,
                     job_id = here.job_id,
-                    status = ItemStatus.PENDING if not here.job_id else ItemStatus.PROCESSING,
+                    status = document_entry.get("status"),
                     name = document_entry.get("name"),
                     source = document_entry.get("source"),
                     mimetype = document_entry.get("mimetype"),
@@ -1097,4 +1137,6 @@ walker _import_collection {
             }
         }
     }
+
+
 }
