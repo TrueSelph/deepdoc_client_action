@@ -350,7 +350,6 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     st.error(f"Error loading file: {e}")
 
             if data_to_import:
-                st.info("Importing agent Document...")
                 result = call_api(
                     endpoint="action/walker/deepdoc_client_action/import_documents",
                     json_data={
@@ -360,7 +359,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                         "purge": purge_collection,
                     },
                 )
-                st.write(result)
+
                 if result:
                     st.success("Agent documents imported successfully")
                 else:
