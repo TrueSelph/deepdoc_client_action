@@ -78,3 +78,4 @@
 
 # 0.1.12
 - Added import and export of documents and knodes
+- Added TOCChunker
