@@ -77,7 +77,8 @@ node DeepDocClientAction(Action) {
         to_page:int=100000,
         lang:str="english",
         with_embeddings:bool=False,
-        callback_url:str=""
+        callback_url:str="",
+        chunker_type:str="hybrid"
     ) -> str {
 
         # """
@@ -108,6 +109,7 @@ node DeepDocClientAction(Action) {
                 "to_page": to_page,
                 "lang": lang,
                 "with_embeddings": with_embeddings,  # default to False, can be overridden
+                "chunker_type": chunker_type
             };
 
             # Include the callback URL if provided
@@ -505,6 +507,10 @@ node DeepDocClientAction(Action) {
                         chunk_metadata["page"] = self.format_page_range(result_page_nums);
                         # Process bbox, if present
                         chunk_metadata["bbox"] = result.get("metadata", {}).get("bbox", []);
+                        # adding title
+                        chunk_metadata["title"] = result.get("metadata", {}).get("headings", []);
+                        # adding hierarchy
+                        chunk_metadata["hierarchy"] = result.get("metadata", {}).get("hierarchy", []);
                         # Add to batch
                         texts.append(text);
                         metadatas.append(chunk_metadata);

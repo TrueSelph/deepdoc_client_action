@@ -22,6 +22,7 @@ walker add_documents(agent_graph_walker) {
     has with_embeddings:bool = False;  # whether to generate embeddings for the documents
     has response:str = "";
     has reporting:bool = True;
+    has chunker_type:str = "hybrid";
 
     # set up logger
     static has logger:Logger = logging.getLogger(__name__);
@@ -89,7 +90,8 @@ walker add_documents(agent_graph_walker) {
             to_page=self.to_page,
             lang=self.lang,
             with_embeddings=self.with_embeddings,
-            callback_url=callback_url
+            callback_url=callback_url,
+            chunker_type=self.chunker_type
         );
 
         if self.reporting {
