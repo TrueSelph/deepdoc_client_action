@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Dict
 
 import streamlit as st
+import yaml
 from jvclient.lib.utils import call_api, get_reports_payload
 from jvclient.lib.widgets import app_header, app_update_action
 from streamlit_router import StreamlitRouter
@@ -21,6 +22,8 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
     :param info: Additional information.
     """
     (model_key, module_root) = app_header(agent_id, action_id, info)
+    if "job_id_details" not in st.session_state:
+        st.session_state.job_id_details = ""
 
     # add documents section
     with st.expander("Configure", False):
@@ -112,6 +115,11 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
             value=True,
         )
 
+        chunker_type = st.selectbox(
+            "Chunker type",
+            options=["toc", "hybrid", "hierarchical"],
+            key=f"{model_key}_chunker_type",
+        )
         # Process inputs
         url_list = [url.strip() for url in doc_urls.split("\n") if url.strip()]
         metadata_list = []
@@ -149,6 +157,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 "to_page": int(to_page) if to_page is not None else 0,
                 "lang": str(lang),
                 "with_embeddings": with_embeddings,
+                "chunker_type": chunker_type,
             }
 
             # Add optional fields only if they exist
@@ -270,6 +279,105 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
         }
         color = color_map.get(status, "gray")
         return f"<span style='background-color: {color}; color: white; padding: 2px 6px; border-radius: 4px;'>{status}</span>"
+
+    with st.expander("Export document", False):
+        # Fetch documents with pagination parameters
+        with_embeddings = st.toggle(
+            "Export with Embeddings", value=True, key=f"{model_key}_with_embeddings"
+        )
+        result = call_api(
+            endpoint="action/walker/deepdoc_client_action/export_documents",
+            json_data={
+                "agent_id": agent_id,
+                "reporting": True,
+                "with_embeddings": with_embeddings,
+            },
+            timeout=120,
+        )
+
+        if result and result.status_code == 200:
+            payload = get_reports_payload(result)
+            if payload:
+                st.download_button(
+                    label="Download Documents",
+                    data=json.dumps(payload, indent=2, ensure_ascii=False),
+                    file_name="deepdoc_documents.json",
+                    mime="application/json",
+                )
+            else:
+                st.error("No job ID returned from the API. Please try again.")
+
+    with st.expander("Import document", False):
+        knode_source = st.radio(
+            "Choose data source:",
+            ("Text input", "Upload file"),
+            key=f"{model_key}_knode_source",
+        )
+
+        purge_collection = st.toggle(
+            "Purge Collection",
+            value=False,
+            key=f"{model_key}_purge_collection",
+        )
+
+        data_to_import = ""
+        if knode_source == "Text input":
+            data_to_import = st.text_area(
+                "Document in YAML or JSON",
+                value="",
+                height=170,
+                key=f"{model_key}_knode_data",
+            )
+
+        uploaded_file = None
+        if knode_source == "Upload file":
+            uploaded_file = st.file_uploader(
+                "Upload file (YAML or JSON)",
+                type=["yaml", "json"],
+                key=f"{model_key}_document_upload",
+            )
+
+        with_embeddings = st.toggle(
+            "Import with Embeddings",
+            value=True,
+            key=f"{model_key}_import_embeddings",
+        )
+
+        if st.button("Import", key=f"{model_key}_btn_import_document"):
+            if uploaded_file:
+                try:
+                    file_content = uploaded_file.read().decode(
+                        "utf-8", errors="replace"
+                    )
+                    if uploaded_file.type == "application/json":
+                        data_to_import = json.loads(file_content)
+                    else:
+                        data_to_import = yaml.safe_load(file_content)
+                    data_to_import = json.dumps(data_to_import, ensure_ascii=False)
+                except Exception as e:
+                    st.error(f"Error loading file: {e}")
+
+            if data_to_import:
+                result = call_api(
+                    endpoint="action/walker/deepdoc_client_action/import_documents",
+                    json_data={
+                        "agent_id": agent_id,
+                        "data": data_to_import,
+                        "with_embeddings": with_embeddings,
+                        "purge": purge_collection,
+                    },
+                )
+
+                if result:
+                    st.success("Agent documents imported successfully")
+                else:
+                    st.error(
+                        "Failed to import document. Ensure valid YAML/JSON format."
+                    )
+            else:
+                st.error(
+                    "No data to import. Please provide valid text or upload a file."
+                )
 
     with st.expander("Document List", True):
         # Initialize session state variables for pagination
@@ -493,13 +601,23 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                                 if st.button("No, Keep Job"):
                                     st.session_state.confirm_state = {"active": False}
                                     st.rerun()
-                        elif st.button("Delete Job", key=f"delete_job_{job_id}"):
-                            st.session_state.confirm_state = {
-                                "active": True,
-                                "type": "delete_job",
-                                "job_id": job_id,
-                            }
-                            st.rerun()
+
+                        elif status == "COMPLETED":
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.button("Delete Job", key=f"delete_job_{job_id}"):
+                                    st.session_state.confirm_state = {
+                                        "active": True,
+                                        "type": "delete_job",
+                                        "job_id": job_id,
+                                    }
+                                    st.rerun()
+                            with col2:
+                                if st.button("View Job", key=f"view_job_{job_id}"):
+                                    st.session_state.current_page = 3
+                                    st.session_state.job_id_details = job_id
+                                    st.session_state.job_details = documents
+                                    st.rerun()
 
                     # Display each document in the job
                     for document in documents:
@@ -618,9 +736,94 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                     time.sleep(5)
                     st.rerun()
 
-            else:
-                st.info(
-                    "No documents found. Your uploaded documents will be shown here."
-                )
-        else:
-            st.info("No documents found. Your uploaded documents will be shown here.")
+    if st.session_state.job_id_details:
+        st.write("---")
+        st.write("## Job Details")
+
+        if "page" not in st.session_state[model_key]:
+            st.session_state[model_key]["page"] = 1
+        if "per_page" not in st.session_state[model_key]:
+            st.session_state[model_key]["per_page"] = 10
+
+        # Items per page selection
+        per_page_options = [10, 20, 30, 50, 100]
+        new_per_page = st.selectbox(
+            "Documents per page:",
+            per_page_options,
+            index=per_page_options.index(st.session_state[model_key]["per_page"]),
+        )
+
+        # Reset page if per_page changes
+        if new_per_page != st.session_state[model_key]["per_page"]:
+            st.session_state[model_key]["per_page"] = new_per_page
+            st.session_state[model_key]["page"] = 1
+            st.rerun()
+
+        st.session_state[model_key]["pages_input"] = st.text_input(
+            "Enter page numbers (comma or space separated):",
+            value="",  # optional default value
+            placeholder="e.g., 1,2,3",
+        )
+
+        st.session_state[model_key]["pages_input"] = [
+            p.strip()
+            for p in st.session_state[model_key]["pages_input"]
+            .replace(",", " ")
+            .split()
+            if p.strip().isdigit()
+        ]
+        st.session_state[model_key][
+            "filter_by"
+        ] = f'metadata.job_id:="{st.session_state.job_id_details}"'
+
+        if st.session_state[model_key]["pages_input"]:
+            st.session_state[model_key][
+                "filter_by"
+            ] += f' && metadata.page:=[{",".join(st.session_state[model_key]["pages_input"])}]'
+
+        params = {
+            "page": st.session_state[model_key].get("page", 1),
+            "per_page": st.session_state[model_key].get("per_page", 10),
+            "filter_by": st.session_state[model_key]["filter_by"],
+            "agent_id": agent_id,
+        }
+
+        response = call_api(
+            endpoint="action/walker/typesense_vector_store_action/list_documents",
+            json_data=params,
+        )
+
+        if response and response.status_code == 200:
+            result = get_reports_payload(response)
+            documents = result.get("documents", [])
+
+            for doc in documents:
+                if doc["metadata"].get("title"):
+                    title = doc["metadata"]["title"][0].strip()
+                else:
+                    title = doc["text"]
+                    title = title.split("\n")[0].strip()
+
+                title = title[:40]
+                page = doc["metadata"].get("page", "N/A")
+
+                with st.expander(f"{title} (Page {page})", expanded=False):
+
+                    st.write(doc["text"])
+                    st.write("---")
+
+                    col1, col2 = st.columns([5, 1])  # first column 5x width of second
+                    with col1:
+                        st.markdown(f"**Page:** {page}")
+                    with col2:
+                        # Delete button
+                        if st.button("Delete", key=f"delete_{doc['id']}"):
+                            args = {"id": doc["id"], "agent_id": agent_id}
+                            result = call_api(
+                                endpoint="action/walker/typesense_vector_store_action/delete_document",
+                                json_data=args,
+                            )
+
+                            if result and result.status_code == 200:
+                                get_reports_payload(result)
+                                st.rerun()
