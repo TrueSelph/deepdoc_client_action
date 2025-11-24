@@ -24,6 +24,8 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
     (model_key, module_root) = app_header(agent_id, action_id, info)
     if "job_id_details" not in st.session_state:
         st.session_state.job_id_details = ""
+    if "editing_doc_id" not in st.session_state:
+        st.session_state.editing_doc_id = None
 
     # add documents section
     with st.expander("Configure", False):
@@ -117,7 +119,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
         chunker_type = st.selectbox(
             "Chunker type",
-            options=["toc", "hybrid", "hierarchical"],
+            options=["mineru", "toc", "hybrid", "hierarchical"],
             key=f"{model_key}_chunker_type",
         )
         # Process inputs
@@ -285,27 +287,29 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
         with_embeddings = st.toggle(
             "Export with Embeddings", value=True, key=f"{model_key}_with_embeddings"
         )
-        result = call_api(
-            endpoint="action/walker/deepdoc_client_action/export_documents",
-            json_data={
-                "agent_id": agent_id,
-                "reporting": True,
-                "with_embeddings": with_embeddings,
-            },
-            timeout=120,
-        )
 
-        if result and result.status_code == 200:
-            payload = get_reports_payload(result)
-            if payload:
-                st.download_button(
-                    label="Download Documents",
-                    data=json.dumps(payload, indent=2, ensure_ascii=False),
-                    file_name="deepdoc_documents.json",
-                    mime="application/json",
-                )
-            else:
-                st.error("No job ID returned from the API. Please try again.")
+        if st.button("Export Documents", key=f"{model_key}_export_btn"):
+            result = call_api(
+                endpoint="action/walker/deepdoc_client_action/export_documents",
+                json_data={
+                    "agent_id": agent_id,
+                    "reporting": True,
+                    "with_embeddings": with_embeddings,
+                },
+                timeout=120,
+            )
+
+            if result and result.status_code == 200:
+                payload = get_reports_payload(result)
+                if payload:
+                    st.download_button(
+                        label="Download Documents",
+                        data=json.dumps(payload, indent=2, ensure_ascii=False),
+                        file_name="deepdoc_documents.json",
+                        mime="application/json",
+                    )
+                else:
+                    st.error("No job ID returned from the API. Please try again.")
 
     with st.expander("Import document", False):
         knode_source = st.radio(
@@ -808,22 +812,74 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
                 page = doc["metadata"].get("page", "N/A")
 
                 with st.expander(f"{title} (Page {page})", expanded=False):
-
-                    st.write(doc["text"])
-                    st.write("---")
-
-                    col1, col2 = st.columns([5, 1])  # first column 5x width of second
-                    with col1:
-                        st.markdown(f"**Page:** {page}")
-                    with col2:
-                        # Delete button
-                        if st.button("Delete", key=f"delete_{doc['id']}"):
-                            args = {"id": doc["id"], "agent_id": agent_id}
-                            result = call_api(
-                                endpoint="action/walker/typesense_vector_store_action/delete_document",
-                                json_data=args,
+                    if st.session_state.editing_doc_id == doc["id"]:
+                        with st.form(key=f"edit_form_{doc['id']}"):
+                            new_text = st.text_area(
+                                "Text", value=doc["text"], height=200
                             )
 
-                            if result and result.status_code == 200:
-                                get_reports_payload(result)
+                            # Prepare metadata for editing (pretty print JSON)
+                            metadata_str = json.dumps(doc["metadata"], indent=2)
+                            new_metadata_str = st.text_area(
+                                "Metadata (JSON)", value=metadata_str, height=200
+                            )
+
+                            c1, c2 = st.columns(2)
+                            with c1:
+                                if st.form_submit_button("Save"):
+                                    try:
+                                        new_metadata = json.loads(new_metadata_str)
+                                        # Update doc
+                                        args = {
+                                            "id": doc["id"],
+                                            "agent_id": agent_id,
+                                            "data": {
+                                                "text": new_text,
+                                                "metadata": new_metadata,
+                                            },
+                                        }
+                                        result = call_api(
+                                            endpoint="action/walker/typesense_vector_store_action/update_document",
+                                            json_data=args,
+                                        )
+                                        if result and result.status_code == 200:
+                                            st.success("Document updated!")
+                                            st.session_state.editing_doc_id = None
+                                            get_reports_payload(result)
+                                            st.rerun()
+                                        else:
+                                            st.error("Failed to update document.")
+                                    except json.JSONDecodeError:
+                                        st.error("Invalid JSON in metadata.")
+                            with c2:
+                                if st.form_submit_button("Cancel"):
+                                    st.session_state.editing_doc_id = None
+                                    st.rerun()
+                    else:
+                        st.write(doc["text"])
+                        st.write("---")
+
+                        col1, col2, col3 = st.columns(
+                            [5, 1, 1]
+                        )  # first column 5x width of second
+                        with col1:
+                            st.markdown(f"**Page:** {page}")
+
+                        with col2:
+                            # Edit button
+                            if st.button("Edit", key=f"edit_btn_{doc['id']}"):
+                                st.session_state.editing_doc_id = doc["id"]
                                 st.rerun()
+
+                        with col3:
+                            # Delete button
+                            if st.button("Delete", key=f"delete_{doc['id']}"):
+                                args = {"id": doc["id"], "agent_id": agent_id}
+                                result = call_api(
+                                    endpoint="action/walker/typesense_vector_store_action/delete_document",
+                                    json_data=args,
+                                )
+
+                                if result and result.status_code == 200:
+                                    get_reports_payload(result)
+                                    st.rerun()
