@@ -119,7 +119,7 @@ def render(router: StreamlitRouter, agent_id: str, action_id: str, info: dict) -
 
         chunker_type = st.selectbox(
             "Chunker type",
-            options=["toc", "hybrid", "hierarchical", "mineru"],
+            options=["mineru", "toc", "hybrid", "hierarchical"],
             key=f"{model_key}_chunker_type",
         )
         # Process inputs
